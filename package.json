@@ -1,7 +1,15 @@
 {
-	"name": "pi-monorepo",
+	"name": "co-mono",
 	"private": true,
 	"type": "module",
+	"homepage": "https://github.com/getcompanion-ai/co-mono#readme",
+	"bugs": {
+		"url": "https://github.com/getcompanion-ai/co-mono/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/getcompanion-ai/co-mono.git"
+	},
 	"workspaces": [
 		"packages/*",
 		"packages/web-ui/example",
