@@ -1,0 +1,8 @@
+{
+  "packages": [
+    "./packages/pi-channels",
+    "./packages/pi-runtime-daemon",
+    "./packages/pi-teams",
+    "./packages/pi-memory-md"
+  ]
+}
