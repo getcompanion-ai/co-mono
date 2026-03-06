@@ -56,7 +56,7 @@ This installer:
 - writes `~/.local/bin/pi` launcher,
 - populates `~/.pi/agent/settings.json` with package list,
 - installs packages (if `npm` is available),
-- and can install a user systemd service for `pi gateway` so it stays alive.
+- and can install a user systemd service for `pi daemon` so it stays alive.
 
 Preinstalled package sources are:
 
@@ -100,20 +100,21 @@ Run:
 Run in background with extensions active:
 
 ```bash
-./pi gateway
+./pi daemon
 ```
 
 For a user systemd setup, create `~/.config/systemd/user/pi.service` with:
 
 ```ini
 [Unit]
-Description=pi gateway
+Description=pi daemon
 After=network-online.target
 
 [Service]
 Type=simple
+Environment=CO_MONO_AGENT_DIR=%h/.pi/agent
 Environment=PI_CODING_AGENT_DIR=%h/.pi/agent
-ExecStart=/absolute/path/to/repo/pi gateway
+ExecStart=/absolute/path/to/repo/pi daemon
 Restart=always
 RestartSec=5
 

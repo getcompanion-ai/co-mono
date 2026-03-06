@@ -231,10 +231,8 @@ resolve_release_tag() {
 platform_assets() {
   if [[ "$PLATFORM" == "windows"* ]]; then
     echo "pi-${PLATFORM}.zip"
-    echo "co-mono-${PLATFORM}.zip"
   else
     echo "pi-${PLATFORM}.tar.gz"
-    echo "co-mono-${PLATFORM}.tar.gz"
   fi
 }
 
@@ -347,14 +345,14 @@ write_service_file() {
   local service_path="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
   cat > "$service_path" <<EOF
 [Unit]
-Description=pi gateway
+Description=pi daemon
 After=network-online.target
 
 [Service]
 Type=simple
 Environment=CO_MONO_AGENT_DIR=${AGENT_DIR}
 Environment=PI_CODING_AGENT_DIR=${AGENT_DIR}
-ExecStart=${BIN_DIR}/pi gateway
+ExecStart=${BIN_DIR}/pi daemon
 Restart=always
 RestartSec=5
 
@@ -381,7 +379,7 @@ print_next_steps() {
   echo "  pi"
   echo
   echo "Run always-on:"
-  echo "  pi gateway"
+  echo "  pi daemon"
   echo
   if [[ "$SETUP_DAEMON" == "1" ]] && [[ "$SKIP_SERVICE" == "0" ]]; then
     echo "Service:"
@@ -419,7 +417,7 @@ bootstrap_from_source() {
   log "Running source install"
   (
     cd "$source_dir"
-    PI_AGENT_DIR="$AGENT_DIR" \
+    CO_MONO_AGENT_DIR="$AGENT_DIR" \
     PI_CODING_AGENT_DIR="$AGENT_DIR" \
       ./install.sh
   )
@@ -464,8 +462,6 @@ install_from_release() {
   local install_binary
   if [[ -d "$workdir/pi" ]]; then
     release_dir="$workdir/pi"
-  elif [[ -d "$workdir/co-mono" ]]; then
-    release_dir="$workdir/co-mono"
   elif [[ -f "$workdir/pi" ]]; then
     release_dir="$workdir"
   fi
@@ -480,8 +476,6 @@ install_from_release() {
 
   if [[ -x "$INSTALL_DIR/pi" ]]; then
     install_binary="$INSTALL_DIR/pi"
-  elif [[ -x "$INSTALL_DIR/co-mono" ]]; then
-    install_binary="$INSTALL_DIR/co-mono"
   else
     return 1
   fi
