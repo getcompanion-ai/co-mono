@@ -298,8 +298,46 @@ describe("extensions discovery", () => {
 	});
 
 	it("resolves dependencies from extension's own node_modules", async () => {
-		// Load extension that has its own package.json and node_modules with 'ms' package
-		const extPath = path.resolve(__dirname, "../examples/extensions/with-deps");
+		const extPath = path.join(tempDir, "custom-location", "with-deps");
+		const nodeModulesDir = path.join(extPath, "node_modules", "ms");
+		fs.mkdirSync(nodeModulesDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(extPath, "index.ts"),
+			`
+				import { Type } from "@sinclair/typebox";
+				import ms from "ms";
+				export default function(pi) {
+					pi.registerTool({
+						name: "parse_duration",
+						label: "parse_duration",
+						description: "Parse a duration string",
+						parameters: Type.Object({ value: Type.String() }),
+						execute: async (_toolCallId, params) => ({
+							content: [{ type: "text", text: String(ms(params.value)) }],
+						}),
+					});
+				}
+			`,
+		);
+		fs.writeFileSync(
+			path.join(extPath, "package.json"),
+			JSON.stringify({
+				name: "with-deps",
+				type: "module",
+			}),
+		);
+		fs.writeFileSync(
+			path.join(nodeModulesDir, "package.json"),
+			JSON.stringify({
+				name: "ms",
+				type: "module",
+				exports: "./index.js",
+			}),
+		);
+		fs.writeFileSync(
+			path.join(nodeModulesDir, "index.js"),
+			`export default function ms(value) { return value === "1m" ? 60000 : 0; }`,
+		);
 
 		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
 
