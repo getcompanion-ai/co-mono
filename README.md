@@ -37,10 +37,110 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.m
 
 ## Install
 
+### Public (binary)
+
+Use this for users on production machines where you don't want to expose source:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash
+```
+
+Then run:
+
+```bash
+co-mono
+```
+
+The installer downloads the latest release archive, writes a launcher to
+`~/.local/bin/co-mono`, and creates a private agent settings directory at
+`~/.co-mono/agent/settings.json` with remote packages.
+
+Preinstalled package sources are:
+
+```json
+[
+  "npm:@e9n/pi-channels",
+  "npm:pi-memory-md",
+  "npm:pi-teams"
+]
+```
+
+If `npm` is available, it also tries to install these packages during install.
+
+### Keep it running
+
+Start and keep `co-mono` alive with your process supervisor of choice (systemd, launchd, supervisor, Docker, etc).
+
+For public installs, a minimal systemd user service is:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/co-mono.service <<'EOF'
+[Unit]
+Description=co-mono
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PI_CODING_AGENT_DIR=%h/.co-mono/agent
+Environment=CO_MONO_AGENT_DIR=%h/.co-mono/agent
+ExecStart=%h/.local/bin/co-mono
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now co-mono
+```
+
+### Local (source)
+
 ```bash
 git clone https://github.com/getcompanion-ai/co-mono.git
 cd co-mono
-npm install
+./install.sh
+```
+
+Run:
+
+```bash
+./co-mono
+```
+
+Run with built-in runtime watchdog:
+
+```bash
+CO_MONO_RUNTIME_COMMAND="python -m http.server 8765" \
+  ./co-mono --with-runtime-daemon
+```
+
+For a user systemd setup, create `~/.config/systemd/user/co-mono.service` with:
+
+```ini
+[Unit]
+Description=co-mono
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PI_CODING_AGENT_DIR=%h/.co-mono/agent
+Environment=CO_MONO_AGENT_DIR=%h/.co-mono/agent
+ExecStart=/absolute/path/to/repo/co-mono --with-runtime-daemon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+Then enable:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now co-mono
 ```
 
 Optional:
