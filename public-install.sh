@@ -15,6 +15,11 @@ RUN_INSTALL_PACKAGES="${PI_INSTALL_PACKAGES:-${CO_MONO_INSTALL_PACKAGES:-1}}"
 SETUP_DAEMON="${PI_SETUP_DAEMON:-${CO_MONO_SETUP_DAEMON:-0}}"
 START_DAEMON="${PI_START_DAEMON:-${CO_MONO_START_DAEMON:-0}}"
 SKIP_SERVICE="${PI_SKIP_SERVICE:-${CO_MONO_SKIP_SERVICE:-0}}"
+SERVICE_MANAGER=""
+SERVICE_UNIT_PATH=""
+SERVICE_LABEL=""
+SERVICE_STDOUT_LOG=""
+SERVICE_STDERR_LOG=""
 
 DEFAULT_PACKAGES=(
   "npm:@e9n/pi-channels"
@@ -53,7 +58,7 @@ Options:
   --package <pkg>             Add package to installation list (repeatable)
   --no-default-packages        Skip default packages list
   --skip-packages             Skip package installation step
-  --daemon                    Install user systemd service for long-lived mode
+  --daemon                    Install user service for long-lived mode
   --start                     Start service after install (implies --daemon)
   --skip-daemon               Force skip service setup/start
   --fallback-to-source <0|1>  Allow source fallback when release is unavailable
@@ -66,6 +71,7 @@ Env vars:
   PI_START_DAEMON=0/1
   PI_FALLBACK_TO_SOURCE=0/1
   PI_SKIP_REINSTALL=1
+  PI_SERVICE_NAME=<name>
 EOF
 }
 
@@ -337,10 +343,68 @@ install_packages() {
 }
 
 write_service_file() {
+  local uname_s
+  uname_s="$(uname -s)"
+
+  if [[ "$uname_s" == "Darwin" ]]; then
+    if ! has launchctl; then
+      log "launchctl unavailable; skipping service setup."
+      return 1
+    fi
+
+    mkdir -p "$HOME/Library/LaunchAgents" "$INSTALL_DIR/logs"
+    local plist_path="$HOME/Library/LaunchAgents/${SERVICE_NAME}.plist"
+    local label="${SERVICE_NAME}"
+    local stdout_log="$INSTALL_DIR/logs/${SERVICE_NAME}.out.log"
+    local stderr_log="$INSTALL_DIR/logs/${SERVICE_NAME}.err.log"
+
+    cat > "$plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${BIN_DIR}/pi</string>
+    <string>daemon</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CO_MONO_AGENT_DIR</key>
+    <string>${AGENT_DIR}</string>
+    <key>PI_CODING_AGENT_DIR</key>
+    <string>${AGENT_DIR}</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>WorkingDirectory</key>
+  <string>${INSTALL_DIR}</string>
+  <key>StandardOutPath</key>
+  <string>${stdout_log}</string>
+  <key>StandardErrorPath</key>
+  <string>${stderr_log}</string>
+</dict>
+</plist>
+EOF
+
+    SERVICE_MANAGER="launchd"
+    SERVICE_UNIT_PATH="$plist_path"
+    SERVICE_LABEL="$label"
+    SERVICE_STDOUT_LOG="$stdout_log"
+    SERVICE_STDERR_LOG="$stderr_log"
+    log "launch agent: $plist_path"
+    return 0
+  fi
+
   if ! has systemctl; then
     log "systemctl unavailable; skipping service setup."
     return 1
   fi
+
   mkdir -p "$HOME/.config/systemd/user"
   local service_path="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
   cat > "$service_path" <<EOF
@@ -359,15 +423,29 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 EOF
+  SERVICE_MANAGER="systemd"
+  SERVICE_UNIT_PATH="$service_path"
+  SERVICE_LABEL="${SERVICE_NAME}"
   log "service file: $service_path"
 }
 
 start_daemon_service() {
-  if ! has systemctl; then
-    return 1
+  if [[ "$SERVICE_MANAGER" == "launchd" ]]; then
+    local domain_target="gui/$(id -u)"
+    launchctl bootout "$domain_target" "$SERVICE_UNIT_PATH" >/dev/null 2>&1 || true
+    launchctl bootstrap "$domain_target" "$SERVICE_UNIT_PATH"
+    launchctl enable "${domain_target}/${SERVICE_LABEL}"
+    launchctl kickstart -k "${domain_target}/${SERVICE_LABEL}"
+    return 0
   fi
-  systemctl --user daemon-reload
-  systemctl --user enable --now "${SERVICE_NAME}.service"
+
+  if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
+    systemctl --user daemon-reload
+    systemctl --user enable --now "${SERVICE_NAME}.service"
+    return 0
+  fi
+
+  return 1
 }
 
 print_next_steps() {
@@ -382,12 +460,22 @@ print_next_steps() {
   echo "  pi daemon"
   echo
   if [[ "$SETUP_DAEMON" == "1" ]] && [[ "$SKIP_SERVICE" == "0" ]]; then
-    echo "Service:"
-    echo "  systemctl --user status ${SERVICE_NAME}"
-    echo "  systemctl --user restart ${SERVICE_NAME}"
-    echo
-    echo "Service logs:"
-    echo "  journalctl --user -u ${SERVICE_NAME} -f"
+    if [[ "$SERVICE_MANAGER" == "launchd" ]]; then
+      echo "Service:"
+      echo "  launchctl print gui/$(id -u)/${SERVICE_LABEL}"
+      echo "  launchctl kickstart -k gui/$(id -u)/${SERVICE_LABEL}"
+      echo
+      echo "Service logs:"
+      echo "  tail -f ${SERVICE_STDOUT_LOG}"
+      echo "  tail -f ${SERVICE_STDERR_LOG}"
+    elif [[ "$SERVICE_MANAGER" == "systemd" ]]; then
+      echo "Service:"
+      echo "  systemctl --user status ${SERVICE_NAME}"
+      echo "  systemctl --user restart ${SERVICE_NAME}"
+      echo
+      echo "Service logs:"
+      echo "  journalctl --user -u ${SERVICE_NAME} -f"
+    fi
   fi
 }
 
