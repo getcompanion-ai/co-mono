@@ -72,6 +72,23 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 	return null;
 }
 
+function loadNamedContextFileFromDir(dir: string, filename: string): { path: string; content: string } | null {
+	const filePath = join(dir, filename);
+	if (!existsSync(filePath)) {
+		return null;
+	}
+
+	try {
+		return {
+			path: filePath,
+			content: readFileSync(filePath, "utf-8"),
+		};
+	} catch (error) {
+		console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
+		return null;
+	}
+}
+
 function loadProjectContextFiles(
 	options: { cwd?: string; agentDir?: string } = {},
 ): Array<{ path: string; content: string }> {
@@ -107,6 +124,18 @@ function loadProjectContextFiles(
 	}
 
 	contextFiles.push(...ancestorContextFiles);
+
+	const globalSoul = loadNamedContextFileFromDir(resolvedAgentDir, "SOUL.md");
+	if (globalSoul && !seenPaths.has(globalSoul.path)) {
+		contextFiles.push(globalSoul);
+		seenPaths.add(globalSoul.path);
+	}
+
+	const projectSoul = loadNamedContextFileFromDir(resolvedCwd, "SOUL.md");
+	if (projectSoul && !seenPaths.has(projectSoul.path)) {
+		contextFiles.push(projectSoul);
+		seenPaths.add(projectSoul.path);
+	}
 
 	return contextFiles;
 }

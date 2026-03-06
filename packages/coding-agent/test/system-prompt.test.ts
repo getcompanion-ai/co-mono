@@ -76,4 +76,21 @@ describe("buildSystemPrompt", () => {
 			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
 		});
 	});
+
+	describe("SOUL.md context", () => {
+		test("adds persona guidance when SOUL.md is present", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [
+					{
+						path: "/tmp/project/SOUL.md",
+						content: "# Soul\n\nBe sharp.",
+					},
+				],
+				skills: [],
+			});
+
+			expect(prompt).toContain("If SOUL.md is present, embody its persona and tone.");
+			expect(prompt).toContain("## /tmp/project/SOUL.md");
+		});
+	});
 });

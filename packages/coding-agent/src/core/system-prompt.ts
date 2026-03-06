@@ -35,6 +35,28 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 }
 
+function buildProjectContextSection(contextFiles: Array<{ path: string; content: string }>): string {
+	if (contextFiles.length === 0) {
+		return "";
+	}
+
+	const hasSoulFile = contextFiles.some(
+		({ path }) => path.replaceAll("\\", "/").endsWith("/SOUL.md") || path === "SOUL.md",
+	);
+	let section = "\n\n# Project Context\n\n";
+	section += "Project-specific instructions and guidelines:\n";
+	if (hasSoulFile) {
+		section +=
+			"\nIf SOUL.md is present, embody its persona and tone. Avoid generic assistant filler and follow its guidance unless higher-priority instructions override it.\n";
+	}
+	section += "\n";
+	for (const { path: filePath, content } of contextFiles) {
+		section += `## ${filePath}\n\n${content}\n\n`;
+	}
+
+	return section;
+}
+
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
 	const {
@@ -74,13 +96,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		}
 
 		// Append project context files
-		if (contextFiles.length > 0) {
-			prompt += "\n\n# Project Context\n\n";
-			prompt += "Project-specific instructions and guidelines:\n\n";
-			for (const { path: filePath, content } of contextFiles) {
-				prompt += `## ${filePath}\n\n${content}\n\n`;
-			}
-		}
+		prompt += buildProjectContextSection(contextFiles);
 
 		// Append skills section (only if read tool is available)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
@@ -197,13 +213,7 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 	}
 
 	// Append project context files
-	if (contextFiles.length > 0) {
-		prompt += "\n\n# Project Context\n\n";
-		prompt += "Project-specific instructions and guidelines:\n\n";
-		for (const { path: filePath, content } of contextFiles) {
-			prompt += `## ${filePath}\n\n${content}\n\n`;
-		}
-	}
+	prompt += buildProjectContextSection(contextFiles);
 
 	// Append skills section (only if read tool is available)
 	if (hasRead && skills.length > 0) {

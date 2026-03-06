@@ -269,6 +269,16 @@ Content`,
 			expect(agentsFiles.some((f) => f.path.includes("AGENTS.md"))).toBe(true);
 		});
 
+		it("should discover SOUL.md from the project root", async () => {
+			writeFileSync(join(cwd, "SOUL.md"), "# Soul\n\nBe less corporate.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			expect(agentsFiles.some((f) => f.path.endsWith("SOUL.md"))).toBe(true);
+		});
+
 		it("should discover SYSTEM.md from cwd/.pi", async () => {
 			const piDir = join(cwd, ".pi");
 			mkdirSync(piDir, { recursive: true });
