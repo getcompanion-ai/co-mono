@@ -437,13 +437,11 @@ install_from_release() {
   local tag="$1"
   detect_platform
   local workdir
-  local asset
   local url
   local archive
   local downloaded=0
 
   workdir="$(mktemp -d)"
-  archive="$workdir/$asset"
   while IFS= read -r asset; do
     url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
     archive="$workdir/$asset"
