@@ -3,18 +3,18 @@
 set -euo pipefail
 
 # Defaults
-REPO="${CO_MONO_REPO:-getcompanion-ai/co-mono}"
-VERSION="${CO_MONO_VERSION:-latest}"
-INSTALL_DIR="${CO_MONO_INSTALL_DIR:-$HOME/.co-mono}"
-BIN_DIR="${CO_MONO_BIN_DIR:-$HOME/.local/bin}"
-AGENT_DIR="${CO_MONO_AGENT_DIR:-$INSTALL_DIR/agent}"
-SERVICE_NAME="${CO_MONO_SERVICE_NAME:-co-mono}"
-FALLBACK_TO_SOURCE="${CO_MONO_FALLBACK_TO_SOURCE:-1}"
-SKIP_REINSTALL="${CO_MONO_SKIP_REINSTALL:-0}"
-RUN_INSTALL_PACKAGES="${CO_MONO_INSTALL_PACKAGES:-1}"
-SETUP_DAEMON="${CO_MONO_SETUP_DAEMON:-0}"
-START_DAEMON="${CO_MONO_START_DAEMON:-0}"
-SKIP_SERVICE="${CO_MONO_SKIP_SERVICE:-0}"
+REPO="${PI_REPO:-${CO_MONO_REPO:-getcompanion-ai/co-mono}}"
+VERSION="${PI_VERSION:-${CO_MONO_VERSION:-latest}}"
+INSTALL_DIR="${PI_INSTALL_DIR:-${CO_MONO_INSTALL_DIR:-$HOME/.pi}}"
+BIN_DIR="${PI_BIN_DIR:-${CO_MONO_BIN_DIR:-$HOME/.local/bin}}"
+AGENT_DIR="${PI_AGENT_DIR:-${CO_MONO_AGENT_DIR:-$INSTALL_DIR/agent}}"
+SERVICE_NAME="${PI_SERVICE_NAME:-${CO_MONO_SERVICE_NAME:-pi}}"
+FALLBACK_TO_SOURCE="${PI_FALLBACK_TO_SOURCE:-${CO_MONO_FALLBACK_TO_SOURCE:-1}}"
+SKIP_REINSTALL="${PI_SKIP_REINSTALL:-${CO_MONO_SKIP_REINSTALL:-0}}"
+RUN_INSTALL_PACKAGES="${PI_INSTALL_PACKAGES:-${CO_MONO_INSTALL_PACKAGES:-1}}"
+SETUP_DAEMON="${PI_SETUP_DAEMON:-${CO_MONO_SETUP_DAEMON:-0}}"
+START_DAEMON="${PI_START_DAEMON:-${CO_MONO_START_DAEMON:-0}}"
+SKIP_SERVICE="${PI_SKIP_SERVICE:-${CO_MONO_SKIP_SERVICE:-0}}"
 
 DEFAULT_PACKAGES=(
   "npm:@e9n/pi-channels"
@@ -47,8 +47,8 @@ Usage:
 Options:
   --repo <owner/repo>         Override GitHub repo for install (default: getcompanion-ai/co-mono)
   --version <tag>|latest      Release tag to install (default: latest)
-  --install-dir <path>        Target directory for release contents (default: ~/.co-mono)
-  --bin-dir <path>            Directory for co-mono launcher (default: ~/.local/bin)
+  --install-dir <path>        Target directory for release contents (default: ~/.pi)
+  --bin-dir <path>            Directory for pi launcher (default: ~/.local/bin)
   --agent-dir <path>          Agent config directory (default: <install-dir>/agent)
   --package <pkg>             Add package to installation list (repeatable)
   --no-default-packages        Skip default packages list
@@ -61,11 +61,11 @@ Options:
   --help
 
 Env vars:
-  CO_MONO_INSTALL_PACKAGES=0/1
-  CO_MONO_SETUP_DAEMON=0/1
-  CO_MONO_START_DAEMON=0/1
-  CO_MONO_FALLBACK_TO_SOURCE=0/1
-  CO_MONO_SKIP_REINSTALL=1
+  PI_INSTALL_PACKAGES=0/1
+  PI_SETUP_DAEMON=0/1
+  PI_START_DAEMON=0/1
+  PI_FALLBACK_TO_SOURCE=0/1
+  PI_SKIP_REINSTALL=1
 EOF
 }
 
@@ -149,7 +149,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$FALLBACK_TO_SOURCE" != "0" && "$FALLBACK_TO_SOURCE" != "1" ]]; then
-  fail "CO_MONO_FALLBACK_TO_SOURCE must be 0 or 1"
+  fail "PI_FALLBACK_TO_SOURCE must be 0 or 1"
 fi
 
 if [[ -d "$INSTALL_DIR" && "$SKIP_REINSTALL" != "1" ]]; then
@@ -157,7 +157,7 @@ if [[ -d "$INSTALL_DIR" && "$SKIP_REINSTALL" != "1" ]]; then
 fi
 
 if [[ -z "${SERVICE_NAME:-}" ]]; then
-  SERVICE_NAME="co-mono"
+  SERVICE_NAME="pi"
 fi
 
 download_file() {
@@ -272,8 +272,8 @@ write_launcher() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-export CO_MONO_AGENT_DIR="${AGENT_DIR}"
 export PI_CODING_AGENT_DIR="${AGENT_DIR}"
+export CO_MONO_AGENT_DIR="${AGENT_DIR}"
 
 exec "${runtime_dir}" "\$@"
 EOF
@@ -330,7 +330,7 @@ install_packages() {
 
   while IFS= read -r package; do
     [[ -z "$package" ]] && continue
-    if "$BIN_DIR/co-mono" install "$package" >/dev/null 2>&1; then
+    if "$BIN_DIR/pi" install "$package" >/dev/null 2>&1; then
       log "Installed package: $package"
     else
       log "Could not install ${package} now. It will install on first run when available."
@@ -347,14 +347,14 @@ write_service_file() {
   local service_path="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
   cat > "$service_path" <<EOF
 [Unit]
-Description=co-mono background agent
+Description=pi gateway
 After=network-online.target
 
 [Service]
 Type=simple
 Environment=CO_MONO_AGENT_DIR=${AGENT_DIR}
 Environment=PI_CODING_AGENT_DIR=${AGENT_DIR}
-ExecStart=${BIN_DIR}/co-mono daemon
+ExecStart=${BIN_DIR}/pi gateway
 Restart=always
 RestartSec=5
 
@@ -375,13 +375,13 @@ start_daemon_service() {
 print_next_steps() {
   echo
   log "Installed to: $INSTALL_DIR"
-  log "Launcher: $BIN_DIR/co-mono"
+  log "Launcher: $BIN_DIR/pi"
   echo
   echo "Run in terminal:"
-  echo "  co-mono"
+  echo "  pi"
   echo
   echo "Run always-on:"
-  echo "  co-mono daemon"
+  echo "  pi gateway"
   echo
   if [[ "$SETUP_DAEMON" == "1" ]] && [[ "$SKIP_SERVICE" == "0" ]]; then
     echo "Service:"
@@ -419,16 +419,16 @@ bootstrap_from_source() {
   log "Running source install"
   (
     cd "$source_dir"
-    CO_MONO_AGENT_DIR="$AGENT_DIR" \
+    PI_AGENT_DIR="$AGENT_DIR" \
     PI_CODING_AGENT_DIR="$AGENT_DIR" \
       ./install.sh
   )
 
-  if [[ ! -x "$source_dir/co-mono" ]]; then
-    fail "co-mono executable not found in source checkout."
+  if [[ ! -x "$source_dir/pi" ]]; then
+    fail "pi executable not found in source checkout."
   fi
 
-  write_launcher "$BIN_DIR/co-mono" "$source_dir/co-mono"
+  write_launcher "$BIN_DIR/pi" "$source_dir/pi"
   ensure_agent_settings
   install_packages
 }
@@ -487,8 +487,12 @@ install_from_release() {
   fi
 
   # Runtime launcher with fixed agent dir env.
-  write_launcher "$INSTALL_DIR/co-mono" "$install_binary"
-  write_launcher "$BIN_DIR/co-mono" "$INSTALL_DIR/co-mono"
+  local launcher_target="$install_binary"
+  if [[ "$install_binary" != "$INSTALL_DIR/pi" ]]; then
+    write_launcher "$INSTALL_DIR/pi" "$install_binary"
+    launcher_target="$INSTALL_DIR/pi"
+  fi
+  write_launcher "$BIN_DIR/pi" "$launcher_target"
   ensure_agent_settings
   install_packages
   rm -rf "$workdir"
