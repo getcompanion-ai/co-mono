@@ -638,7 +638,12 @@ export class GatewayRuntime {
 				if (result.ok) {
 					finishVercelStream(response, "stop");
 				} else {
-					errorVercelStream(response, result.error ?? "Unknown error");
+					const isAbort = result.error?.includes("aborted");
+					if (isAbort) {
+						finishVercelStream(response, "error");
+					} else {
+						errorVercelStream(response, result.error ?? "Unknown error");
+					}
 				}
 			}
 		} catch (error) {

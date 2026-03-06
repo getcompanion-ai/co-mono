@@ -125,6 +125,25 @@ export function createVercelStreamListener(
 							input: inner.toolCall.arguments,
 						});
 						return;
+					case "thinking_start":
+						writeChunk(response, {
+							type: "reasoning-start",
+							id: `reasoning_${inner.contentIndex}`,
+						});
+						return;
+					case "thinking_delta":
+						writeChunk(response, {
+							type: "reasoning-delta",
+							id: `reasoning_${inner.contentIndex}`,
+							delta: inner.delta,
+						});
+						return;
+					case "thinking_end":
+						writeChunk(response, {
+							type: "reasoning-end",
+							id: `reasoning_${inner.contentIndex}`,
+						});
+						return;
 				}
 				return;
 			}
