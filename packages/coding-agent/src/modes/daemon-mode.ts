@@ -27,6 +27,10 @@ export interface DaemonModeOptions {
 	gateway: GatewaySettings;
 }
 
+export interface DaemonModeResult {
+	reason: "shutdown";
+}
+
 function createCommandContextActions(session: AgentSession) {
 	return {
 		waitForIdle: () => session.agent.waitForIdle(),
@@ -70,11 +74,11 @@ function createCommandContextActions(session: AgentSession) {
  * Run in daemon mode.
  * Stays alive indefinitely unless stopped by signal or extension trigger.
  */
-export async function runDaemonMode(session: AgentSession, options: DaemonModeOptions): Promise<never> {
+export async function runDaemonMode(session: AgentSession, options: DaemonModeOptions): Promise<DaemonModeResult> {
 	const { initialMessage, initialImages, messages = [] } = options;
 	let isShuttingDown = false;
-	let resolveReady: () => void = () => {};
-	const ready = new Promise<void>((resolve) => {
+	let resolveReady: (result: DaemonModeResult) => void = () => {};
+	const ready = new Promise<DaemonModeResult>((resolve) => {
 		resolveReady = resolve;
 	});
 	const gatewayBind = process.env.PI_GATEWAY_BIND ?? options.gateway.bind ?? "127.0.0.1";
@@ -118,7 +122,7 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 		}
 
 		session.dispose();
-		resolveReady();
+		resolveReady({ reason: "shutdown" });
 	};
 
 	const handleShutdownSignal = (signal: NodeJS.Signals) => {
@@ -126,18 +130,22 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 			console.error(
 				`[pi-gateway] shutdown failed for ${signal}: ${error instanceof Error ? error.message : String(error)}`,
 			);
-			process.exit(1);
+			resolveReady({ reason: "shutdown" });
 		});
 	};
-
-	process.once("SIGINT", () => handleShutdownSignal("SIGINT"));
-	process.once("SIGTERM", () => handleShutdownSignal("SIGTERM"));
-	process.once("SIGQUIT", () => handleShutdownSignal("SIGQUIT"));
-	process.once("SIGHUP", () => handleShutdownSignal("SIGHUP"));
-
-	process.on("unhandledRejection", (error) => {
+	const sigintHandler = () => handleShutdownSignal("SIGINT");
+	const sigtermHandler = () => handleShutdownSignal("SIGTERM");
+	const sigquitHandler = () => handleShutdownSignal("SIGQUIT");
+	const sighupHandler = () => handleShutdownSignal("SIGHUP");
+	const unhandledRejectionHandler = (error: unknown) => {
 		console.error(`[pi-gateway] unhandled rejection: ${error instanceof Error ? error.message : String(error)}`);
-	});
+	};
+
+	process.once("SIGINT", sigintHandler);
+	process.once("SIGTERM", sigtermHandler);
+	process.once("SIGQUIT", sigquitHandler);
+	process.once("SIGHUP", sighupHandler);
+	process.on("unhandledRejection", unhandledRejectionHandler);
 
 	await session.bindExtensions({
 		commandContextActions: createCommandContextActions(session),
@@ -146,7 +154,7 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 				console.error(
 					`[pi-gateway] extension shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
 				);
-				process.exit(1);
+				resolveReady({ reason: "shutdown" });
 			});
 		},
 		onError: (err) => {
@@ -178,9 +186,19 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 	const keepAlive = setInterval(() => {
 		// Intentionally keep the daemon event loop active.
 	}, 1000);
-	ready.finally(() => {
+
+	const cleanup = () => {
 		clearInterval(keepAlive);
-	});
-	await ready;
-	process.exit(0);
+		process.removeListener("SIGINT", sigintHandler);
+		process.removeListener("SIGTERM", sigtermHandler);
+		process.removeListener("SIGQUIT", sigquitHandler);
+		process.removeListener("SIGHUP", sighupHandler);
+		process.removeListener("unhandledRejection", unhandledRejectionHandler);
+	};
+
+	try {
+		return await ready;
+	} finally {
+		cleanup();
+	}
 }

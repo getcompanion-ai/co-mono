@@ -56,6 +56,14 @@ async function readPipedStdin(): Promise<string | undefined> {
 	});
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const GATEWAY_RESTART_DELAY_MS = 2000;
+const GATEWAY_MIN_RUNTIME_MS = 10000;
+const GATEWAY_MAX_CONSECUTIVE_FAILURES = 10;
+
 function reportSettingsErrors(settingsManager: SettingsManager, context: string): void {
 	const errors = settingsManager.drainErrors();
 	for (const { scope, error } of errors) {
@@ -744,6 +752,148 @@ export async function main(args: string[]) {
 		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
 	}
 
+	if (isGatewayCommand) {
+		const gatewayLoaderOptions = {
+			additionalExtensionPaths: firstPass.extensions,
+			additionalSkillPaths: firstPass.skills,
+			additionalPromptTemplatePaths: firstPass.promptTemplates,
+			additionalThemePaths: firstPass.themes,
+			noExtensions: firstPass.noExtensions,
+			noSkills: firstPass.noSkills,
+			noPromptTemplates: firstPass.noPromptTemplates,
+			noThemes: firstPass.noThemes,
+			systemPrompt: firstPass.systemPrompt,
+			appendSystemPrompt: firstPass.appendSystemPrompt,
+		};
+		const gatewaySessionRoot = join(agentDir, "gateway-sessions");
+		let consecutiveFailures = 0;
+		let primarySessionFile = sessionManager?.getSessionFile();
+		const persistPrimarySession = sessionManager ? sessionManager.isPersisted() : !parsed.noSession;
+
+		const createPrimarySessionManager = (): SessionManager => {
+			if (!persistPrimarySession) {
+				return SessionManager.inMemory(cwd);
+			}
+			if (primarySessionFile) {
+				return SessionManager.open(primarySessionFile, parsed.sessionDir);
+			}
+			return SessionManager.create(cwd, parsed.sessionDir);
+		};
+
+		const createGatewaySession = async (sessionManagerForRun: SessionManager) => {
+			const gatewayResourceLoader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				settingsManager,
+				...gatewayLoaderOptions,
+			});
+			await gatewayResourceLoader.reload();
+
+			const result = await createAgentSession({
+				...sessionOptions,
+				authStorage,
+				modelRegistry,
+				settingsManager,
+				resourceLoader: gatewayResourceLoader,
+				sessionManager: sessionManagerForRun,
+			});
+
+			primarySessionFile = result.session.sessionManager.getSessionFile();
+			return result;
+		};
+
+		while (true) {
+			const primarySessionManager = createPrimarySessionManager();
+			const { session, modelFallbackMessage } = await createGatewaySession(primarySessionManager);
+
+			if (!session.model) {
+				console.error(chalk.red("No models available."));
+				console.error(chalk.yellow("\nSet an API key environment variable:"));
+				console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
+				console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
+				if (modelFallbackMessage) {
+					console.error(chalk.dim(modelFallbackMessage));
+				}
+				process.exit(1);
+			}
+
+			if (cliThinkingOverride) {
+				let effectiveThinking = session.thinkingLevel;
+				if (!session.model.reasoning) {
+					effectiveThinking = "off";
+				} else if (effectiveThinking === "xhigh" && !supportsXhigh(session.model)) {
+					effectiveThinking = "high";
+				}
+				if (effectiveThinking !== session.thinkingLevel) {
+					session.setThinkingLevel(effectiveThinking);
+				}
+			}
+
+			const daemonOptions: DaemonModeOptions = {
+				initialMessage,
+				initialImages,
+				messages: parsed.messages,
+				gateway: settingsManager.getGatewaySettings(),
+				createSession: async (sessionKey) => {
+					const gatewayResourceLoader = new DefaultResourceLoader({
+						cwd,
+						agentDir,
+						settingsManager,
+						...gatewayLoaderOptions,
+					});
+					await gatewayResourceLoader.reload();
+					const gatewaySessionOptions: CreateAgentSessionOptions = {
+						...sessionOptions,
+						authStorage,
+						modelRegistry,
+						settingsManager,
+						resourceLoader: gatewayResourceLoader,
+						sessionManager: createGatewaySessionManager(cwd, sessionKey, gatewaySessionRoot),
+					};
+					const { session: gatewaySession } = await createAgentSession(gatewaySessionOptions);
+					return gatewaySession;
+				},
+			};
+
+			const startedAt = Date.now();
+			try {
+				const result = await runDaemonMode(session, daemonOptions);
+				if (result.reason === "shutdown") {
+					stopThemeWatcher();
+					process.exit(0);
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.stack || error.message : String(error);
+				console.error(`[pi-gateway] daemon crashed: ${message}`);
+				try {
+					session.dispose();
+				} catch {
+					// Ignore disposal errors during crash handling.
+				}
+			}
+
+			const runtimeMs = Date.now() - startedAt;
+			if (runtimeMs < GATEWAY_MIN_RUNTIME_MS) {
+				consecutiveFailures += 1;
+				console.error(
+					`[pi-gateway] exited quickly (${runtimeMs}ms), failure ${consecutiveFailures}/${GATEWAY_MAX_CONSECUTIVE_FAILURES}`,
+				);
+				if (consecutiveFailures >= GATEWAY_MAX_CONSECUTIVE_FAILURES) {
+					console.error("[pi-gateway] crash loop detected, exiting");
+					process.exit(1);
+				}
+			} else {
+				consecutiveFailures = 0;
+				console.error(`[pi-gateway] exited after ${runtimeMs}ms, restarting`);
+			}
+
+			if (GATEWAY_RESTART_DELAY_MS > 0) {
+				console.error(`[pi-gateway] restarting in ${GATEWAY_RESTART_DELAY_MS}ms`);
+				await sleep(GATEWAY_RESTART_DELAY_MS);
+			}
+		}
+	}
+
 	const { session, modelFallbackMessage } = await createAgentSession(sessionOptions);
 
 	if (!isInteractive && !session.model) {
@@ -792,46 +942,6 @@ export async function main(args: string[]) {
 			verbose: parsed.verbose,
 		});
 		await mode.run();
-	} else if (isGatewayCommand) {
-		const gatewayLoaderOptions = {
-			additionalExtensionPaths: firstPass.extensions,
-			additionalSkillPaths: firstPass.skills,
-			additionalPromptTemplatePaths: firstPass.promptTemplates,
-			additionalThemePaths: firstPass.themes,
-			noExtensions: firstPass.noExtensions,
-			noSkills: firstPass.noSkills,
-			noPromptTemplates: firstPass.noPromptTemplates,
-			noThemes: firstPass.noThemes,
-			systemPrompt: firstPass.systemPrompt,
-			appendSystemPrompt: firstPass.appendSystemPrompt,
-		};
-		const gatewaySessionRoot = join(agentDir, "gateway-sessions");
-		const daemonOptions: DaemonModeOptions = {
-			initialMessage,
-			initialImages,
-			messages: parsed.messages,
-			gateway: settingsManager.getGatewaySettings(),
-			createSession: async (sessionKey) => {
-				const gatewayResourceLoader = new DefaultResourceLoader({
-					cwd,
-					agentDir,
-					settingsManager,
-					...gatewayLoaderOptions,
-				});
-				await gatewayResourceLoader.reload();
-				const gatewaySessionOptions: CreateAgentSessionOptions = {
-					...sessionOptions,
-					authStorage,
-					modelRegistry,
-					settingsManager,
-					resourceLoader: gatewayResourceLoader,
-					sessionManager: createGatewaySessionManager(cwd, sessionKey, gatewaySessionRoot),
-				};
-				const { session: gatewaySession } = await createAgentSession(gatewaySessionOptions);
-				return gatewaySession;
-			},
-		};
-		await runDaemonMode(session, daemonOptions);
 	} else {
 		await runPrintMode(session, {
 			mode,
