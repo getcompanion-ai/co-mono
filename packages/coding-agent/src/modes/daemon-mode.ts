@@ -102,6 +102,7 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 			console.error(`[pi-gateway] ${message}`);
 		},
 	});
+	setActiveGatewayRuntime(gateway);
 
 	const shutdown = async (reason: "signal" | "extension"): Promise<void> => {
 		if (isShuttingDown) return;
@@ -169,7 +170,6 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 	}
 
 	await gateway.start();
-	setActiveGatewayRuntime(gateway);
 	console.error(
 		`[pi-gateway] startup complete (session=${session.sessionId ?? "unknown"}, bind=${gatewayBind}, port=${gatewayPort})`,
 	);
