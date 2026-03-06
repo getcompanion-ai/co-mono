@@ -58,20 +58,32 @@ export function createVercelStreamListener(
 	response: ServerResponse,
 	messageId?: string,
 ): (event: AgentSessionEvent) => void {
-	let started = false;
+	// Gate: only forward events within a single prompt's agent_start -> agent_end lifecycle.
+	// handleChat now subscribes this listener immediately before the queued prompt starts,
+	// so these guards only need to bound the stream to that prompt's event span.
+	let active = false;
 	const msgId = messageId ?? randomUUID();
 
 	return (event: AgentSessionEvent) => {
 		if (response.writableEnded) return;
 
-		switch (event.type) {
-			case "agent_start":
-				if (!started) {
-					writeChunk(response, { type: "start", messageId: msgId });
-					started = true;
-				}
-				return;
+		// Activate on our agent_start, deactivate on agent_end
+		if (event.type === "agent_start") {
+			if (!active) {
+				active = true;
+				writeChunk(response, { type: "start", messageId: msgId });
+			}
+			return;
+		}
+		if (event.type === "agent_end") {
+			active = false;
+			return;
+		}
 
+		// Drop events that don't belong to our message
+		if (!active) return;
+
+		switch (event.type) {
 			case "turn_start":
 				writeChunk(response, { type: "start-step" });
 				return;
@@ -169,10 +181,7 @@ export function createVercelStreamListener(
 /**
  * Write the terminal finish sequence and end the response.
  */
-export function finishVercelStream(
-	response: ServerResponse,
-	finishReason: string = "stop",
-): void {
+export function finishVercelStream(response: ServerResponse, finishReason: string = "stop"): void {
 	if (response.writableEnded) return;
 	writeChunk(response, { type: "finish", finishReason });
 	writeChunk(response, "[DONE]");
@@ -182,10 +191,7 @@ export function finishVercelStream(
 /**
  * Write an error chunk and end the response.
  */
-export function errorVercelStream(
-	response: ServerResponse,
-	errorText: string,
-): void {
+export function errorVercelStream(response: ServerResponse, errorText: string): void {
 	if (response.writableEnded) return;
 	writeChunk(response, { type: "error", errorText });
 	writeChunk(response, "[DONE]");

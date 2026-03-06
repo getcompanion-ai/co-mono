@@ -4,7 +4,12 @@ import { URL } from "node:url";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "./agent-session.js";
 import { SessionManager } from "./session-manager.js";
-import { createVercelStreamListener, errorVercelStream, extractUserText, finishVercelStream } from "./vercel-ai-stream.js";
+import {
+	createVercelStreamListener,
+	errorVercelStream,
+	extractUserText,
+	finishVercelStream,
+} from "./vercel-ai-stream.js";
 
 export interface GatewayConfig {
 	bind: string;
@@ -59,6 +64,8 @@ export interface GatewayRuntimeOptions {
 interface GatewayQueuedMessage {
 	request: GatewayMessageRequest;
 	resolve: (result: GatewayMessageResult) => void;
+	onStart?: () => void;
+	onFinish?: () => void;
 }
 
 type GatewayEvent =
@@ -186,18 +193,26 @@ export class GatewayRuntime {
 	}
 
 	async enqueueMessage(request: GatewayMessageRequest): Promise<GatewayMessageResult> {
-		const managedSession = await this.ensureSession(request.sessionKey);
+		return this.enqueueManagedMessage({ request });
+	}
+
+	private async enqueueManagedMessage(queuedMessage: {
+		request: GatewayMessageRequest;
+		onStart?: () => void;
+		onFinish?: () => void;
+	}): Promise<GatewayMessageResult> {
+		const managedSession = await this.ensureSession(queuedMessage.request.sessionKey);
 		if (managedSession.queue.length >= this.config.session.maxQueuePerSession) {
 			return {
 				ok: false,
 				response: "",
 				error: `Queue full (${this.config.session.maxQueuePerSession} pending).`,
-				sessionKey: request.sessionKey,
+				sessionKey: queuedMessage.request.sessionKey,
 			};
 		}
 
 		return new Promise<GatewayMessageResult>((resolve) => {
-			managedSession.queue.push({ request, resolve });
+			managedSession.queue.push({ ...queuedMessage, resolve });
 			this.emitState(managedSession);
 			void this.processNext(managedSession);
 		});
@@ -303,6 +318,7 @@ export class GatewayRuntime {
 		this.emitState(managedSession);
 
 		try {
+			queued.onStart?.();
 			await managedSession.session.prompt(queued.request.text, {
 				images: queued.request.images,
 				source: queued.request.source ?? "extension",
@@ -327,6 +343,7 @@ export class GatewayRuntime {
 				sessionKey: managedSession.sessionKey,
 			});
 		} finally {
+			queued.onFinish?.();
 			managedSession.processing = false;
 			managedSession.lastActiveAt = Date.now();
 			this.emitState(managedSession);
@@ -593,11 +610,7 @@ export class GatewayRuntime {
 		});
 	}
 
-	private async handleChat(
-		sessionKey: string,
-		request: IncomingMessage,
-		response: ServerResponse,
-	): Promise<void> {
+	private async handleChat(sessionKey: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
 		const body = await this.readJsonBody(request);
 		const text = extractUserText(body);
 		if (!text) {
@@ -614,27 +627,44 @@ export class GatewayRuntime {
 		});
 		response.write("\n");
 
-		// Subscribe to session events for Vercel AI SDK translation
 		const managedSession = await this.ensureSession(sessionKey);
 		const listener = createVercelStreamListener(response);
-		const unsubscribe = managedSession.session.subscribe(listener);
+		let unsubscribe: (() => void) | undefined;
+		let streamingActive = false;
+
+		const stopStreaming = () => {
+			if (!streamingActive) return;
+			streamingActive = false;
+			unsubscribe?.();
+			unsubscribe = undefined;
+		};
 
 		// Clean up on client disconnect
 		let clientDisconnected = false;
 		request.on("close", () => {
 			clientDisconnected = true;
-			unsubscribe();
+			stopStreaming();
 		});
 
 		// Drive the session through the existing queue infrastructure
 		try {
-			const result = await this.enqueueMessage({
-				sessionKey,
-				text,
-				source: "extension",
+			const result = await this.enqueueManagedMessage({
+				request: {
+					sessionKey,
+					text,
+					source: "extension",
+				},
+				onStart: () => {
+					if (clientDisconnected || streamingActive) return;
+					unsubscribe = managedSession.session.subscribe(listener);
+					streamingActive = true;
+				},
+				onFinish: () => {
+					stopStreaming();
+				},
 			});
 			if (!clientDisconnected) {
-				unsubscribe();
+				stopStreaming();
 				if (result.ok) {
 					finishVercelStream(response, "stop");
 				} else {
@@ -648,7 +678,7 @@ export class GatewayRuntime {
 			}
 		} catch (error) {
 			if (!clientDisconnected) {
-				unsubscribe();
+				stopStreaming();
 				const message = error instanceof Error ? error.message : String(error);
 				errorVercelStream(response, message);
 			}

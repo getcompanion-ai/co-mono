@@ -1,13 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AgentSessionEvent } from "../src/core/agent-session.js";
-import { extractUserText, createVercelStreamListener, finishVercelStream } from "../src/core/vercel-ai-stream.js";
+import { createVercelStreamListener, extractUserText } from "../src/core/vercel-ai-stream.js";
 
 describe("extractUserText", () => {
 	it("extracts text from useChat v5+ format with parts", () => {
 		const body = {
-			messages: [
-				{ role: "user", parts: [{ type: "text", text: "hello world" }] },
-			],
+			messages: [{ role: "user", parts: [{ type: "text", text: "hello world" }] }],
 		};
 		expect(extractUserText(body)).toBe("hello world");
 	});
@@ -70,7 +68,9 @@ describe("createVercelStreamListener", () => {
 				this.writableEnded = true;
 			},
 			chunks,
-			get ended() { return ended; },
+			get ended() {
+				return ended;
+			},
 		} as any;
 	}
 
@@ -79,8 +79,11 @@ describe("createVercelStreamListener", () => {
 			.filter((c) => c.startsWith("data: "))
 			.map((c) => {
 				const payload = c.replace(/^data: /, "").replace(/\n\n$/, "");
-				try { return JSON.parse(payload); }
-				catch { return payload; }
+				try {
+					return JSON.parse(payload);
+				} catch {
+					return payload;
+				}
 			});
 	}
 
@@ -128,5 +131,19 @@ describe("createVercelStreamListener", () => {
 
 		const parsed = parseChunks(response.chunks);
 		expect(parsed).toEqual([{ type: "start", messageId: "test-msg-id" }]);
+	});
+
+	it("ignores events outside the active prompt lifecycle", () => {
+		const response = createMockResponse();
+		const listener = createVercelStreamListener(response, "test-msg-id");
+
+		listener({ type: "turn_start", turnIndex: 0, timestamp: Date.now() } as AgentSessionEvent);
+		listener({ type: "agent_start" } as AgentSessionEvent);
+		listener({ type: "turn_start", turnIndex: 0, timestamp: Date.now() } as AgentSessionEvent);
+		listener({ type: "agent_end", messages: [] } as AgentSessionEvent);
+		listener({ type: "turn_start", turnIndex: 1, timestamp: Date.now() } as AgentSessionEvent);
+
+		const parsed = parseChunks(response.chunks);
+		expect(parsed).toEqual([{ type: "start", messageId: "test-msg-id" }, { type: "start-step" }]);
 	});
 });
