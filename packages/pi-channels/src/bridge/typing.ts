@@ -14,10 +14,7 @@ const TYPING_INTERVAL_MS = 4_000;
  * Start sending typing indicators. Returns a stop() handle.
  * No-op if the adapter doesn't support sendTyping.
  */
-export function startTyping(
-	adapter: ChannelAdapter | undefined,
-	recipient: string,
-): { stop: () => void } {
+export function startTyping(adapter: ChannelAdapter | undefined, recipient: string): { stop: () => void } {
 	if (!adapter?.sendTyping) return { stop() {} };
 
 	// Fire immediately

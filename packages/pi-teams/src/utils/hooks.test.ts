@@ -1,75 +1,75 @@
 import fs from "node:fs";
 import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { runHook } from "./hooks";
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 describe("runHook", () => {
-  const hooksDir = path.join(process.cwd(), ".pi", "team-hooks");
+	const hooksDir = path.join(process.cwd(), ".pi", "team-hooks");
 
-  beforeAll(() => {
-    if (!fs.existsSync(hooksDir)) {
-      fs.mkdirSync(hooksDir, { recursive: true });
-    }
-  });
+	beforeAll(() => {
+		if (!fs.existsSync(hooksDir)) {
+			fs.mkdirSync(hooksDir, { recursive: true });
+		}
+	});
 
-  afterAll(() => {
-    // Optional: Clean up created scripts
-    const files = ["success_hook.sh", "fail_hook.sh"];
-    files.forEach(f => {
-      const p = path.join(hooksDir, f);
-      if (fs.existsSync(p)) fs.unlinkSync(p);
-    });
-  });
+	afterAll(() => {
+		// Optional: Clean up created scripts
+		const files = ["success_hook.sh", "fail_hook.sh"];
+		files.forEach((f) => {
+			const p = path.join(hooksDir, f);
+			if (fs.existsSync(p)) fs.unlinkSync(p);
+		});
+	});
 
-  it("should return true if hook script does not exist", async () => {
-    const result = await runHook("test_team", "non_existent_hook", { data: "test" });
-    expect(result).toBe(true);
-  });
+	it("should return true if hook script does not exist", async () => {
+		const result = await runHook("test_team", "non_existent_hook", { data: "test" });
+		expect(result).toBe(true);
+	});
 
-  it("should return true if hook script succeeds", async () => {
-    const hookName = "success_hook";
-    const scriptPath = path.join(hooksDir, `${hookName}.sh`);
-    
-    // Create a simple script that exits with 0
-    fs.writeFileSync(scriptPath, "#!/bin/bash\nexit 0", { mode: 0o755 });
+	it("should return true if hook script succeeds", async () => {
+		const hookName = "success_hook";
+		const scriptPath = path.join(hooksDir, `${hookName}.sh`);
 
-    const result = await runHook("test_team", hookName, { data: "test" });
-    expect(result).toBe(true);
-  });
+		// Create a simple script that exits with 0
+		fs.writeFileSync(scriptPath, "#!/bin/bash\nexit 0", { mode: 0o755 });
 
-  it("should return false if hook script fails", async () => {
-    const hookName = "fail_hook";
-    const scriptPath = path.join(hooksDir, `${hookName}.sh`);
-    
-    // Create a simple script that exits with 1
-    fs.writeFileSync(scriptPath, "#!/bin/bash\nexit 1", { mode: 0o755 });
+		const result = await runHook("test_team", hookName, { data: "test" });
+		expect(result).toBe(true);
+	});
 
-    // Mock console.error to avoid noise in test output
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+	it("should return false if hook script fails", async () => {
+		const hookName = "fail_hook";
+		const scriptPath = path.join(hooksDir, `${hookName}.sh`);
 
-    const result = await runHook("test_team", hookName, { data: "test" });
-    expect(result).toBe(false);
+		// Create a simple script that exits with 1
+		fs.writeFileSync(scriptPath, "#!/bin/bash\nexit 1", { mode: 0o755 });
 
-    consoleSpy.mockRestore();
-  });
+		// Mock console.error to avoid noise in test output
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-  it("should pass the payload to the hook script", async () => {
-    const hookName = "payload_hook";
-    const scriptPath = path.join(hooksDir, `${hookName}.sh`);
-    const outputFile = path.join(hooksDir, "payload_output.txt");
+		const result = await runHook("test_team", hookName, { data: "test" });
+		expect(result).toBe(false);
 
-    // Create a script that writes its first argument to a file
-    fs.writeFileSync(scriptPath, `#!/bin/bash\necho "$1" > "${outputFile}"`, { mode: 0o755 });
+		consoleSpy.mockRestore();
+	});
 
-    const payload = { key: "value", "special'char": true };
-    const result = await runHook("test_team", hookName, payload);
+	it("should pass the payload to the hook script", async () => {
+		const hookName = "payload_hook";
+		const scriptPath = path.join(hooksDir, `${hookName}.sh`);
+		const outputFile = path.join(hooksDir, "payload_output.txt");
 
-    expect(result).toBe(true);
-    const output = fs.readFileSync(outputFile, "utf-8").trim();
-    expect(JSON.parse(output)).toEqual(payload);
+		// Create a script that writes its first argument to a file
+		fs.writeFileSync(scriptPath, `#!/bin/bash\necho "$1" > "${outputFile}"`, { mode: 0o755 });
 
-    // Clean up
-    fs.unlinkSync(scriptPath);
-    if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile);
-  });
+		const payload = { key: "value", "special'char": true };
+		const result = await runHook("test_team", hookName, payload);
+
+		expect(result).toBe(true);
+		const output = fs.readFileSync(outputFile, "utf-8").trim();
+		expect(JSON.parse(output)).toEqual(payload);
+
+		// Clean up
+		fs.unlinkSync(scriptPath);
+		if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile);
+	});
 });

@@ -138,6 +138,12 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 	console.error(`[co-mono-daemon] startup complete (session=${session.sessionId ?? "unknown"})`);
 
 	// Keep process alive forever.
+	const keepAlive = setInterval(() => {
+		// Intentionally keep the daemon event loop active.
+	}, 1000);
+	ready.finally(() => {
+		clearInterval(keepAlive);
+	});
 	await ready;
 	process.exit(0);
 }

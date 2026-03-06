@@ -1,112 +1,118 @@
 /**
  * Tmux Terminal Adapter
- * 
+ *
  * Implements the TerminalAdapter interface for tmux terminal multiplexer.
  */
 
 import { execSync } from "node:child_process";
-import { TerminalAdapter, SpawnOptions, execCommand } from "../utils/terminal-adapter";
+import { execCommand, type SpawnOptions, type TerminalAdapter } from "../utils/terminal-adapter";
 
 export class TmuxAdapter implements TerminalAdapter {
-  readonly name = "tmux";
+	readonly name = "tmux";
 
-  detect(): boolean {
-    // tmux is available if TMUX environment variable is set
-    return !!process.env.TMUX;
-  }
+	detect(): boolean {
+		// tmux is available if TMUX environment variable is set
+		return !!process.env.TMUX;
+	}
 
-  spawn(options: SpawnOptions): string {
-    const envArgs = Object.entries(options.env)
-      .filter(([k]) => k.startsWith("PI_"))
-      .map(([k, v]) => `${k}=${v}`);
+	spawn(options: SpawnOptions): string {
+		const envArgs = Object.entries(options.env)
+			.filter(([k]) => k.startsWith("PI_"))
+			.map(([k, v]) => `${k}=${v}`);
 
-    const tmuxArgs = [
-      "split-window",
-      "-h", "-dP",
-      "-F", "#{pane_id}",
-      "-c", options.cwd,
-      "env", ...envArgs,
-      "sh", "-c", options.command
-    ];
+		const tmuxArgs = [
+			"split-window",
+			"-h",
+			"-dP",
+			"-F",
+			"#{pane_id}",
+			"-c",
+			options.cwd,
+			"env",
+			...envArgs,
+			"sh",
+			"-c",
+			options.command,
+		];
 
-    const result = execCommand("tmux", tmuxArgs);
-    
-    if (result.status !== 0) {
-      throw new Error(`tmux spawn failed with status ${result.status}: ${result.stderr}`);
-    }
+		const result = execCommand("tmux", tmuxArgs);
 
-    // Apply layout after spawning
-    execCommand("tmux", ["set-window-option", "main-pane-width", "60%"]);
-    execCommand("tmux", ["select-layout", "main-vertical"]);
+		if (result.status !== 0) {
+			throw new Error(`tmux spawn failed with status ${result.status}: ${result.stderr}`);
+		}
 
-    return result.stdout.trim();
-  }
+		// Apply layout after spawning
+		execCommand("tmux", ["set-window-option", "main-pane-width", "60%"]);
+		execCommand("tmux", ["select-layout", "main-vertical"]);
 
-  kill(paneId: string): void {
-    if (!paneId || paneId.startsWith("iterm_") || paneId.startsWith("zellij_")) {
-      return; // Not a tmux pane
-    }
-    
-    try {
-      execCommand("tmux", ["kill-pane", "-t", paneId.trim()]);
-    } catch {
-      // Ignore errors - pane may already be dead
-    }
-  }
+		return result.stdout.trim();
+	}
 
-  isAlive(paneId: string): boolean {
-    if (!paneId || paneId.startsWith("iterm_") || paneId.startsWith("zellij_")) {
-      return false; // Not a tmux pane
-    }
+	kill(paneId: string): void {
+		if (!paneId || paneId.startsWith("iterm_") || paneId.startsWith("zellij_")) {
+			return; // Not a tmux pane
+		}
 
-    try {
-      execSync(`tmux has-session -t ${paneId}`);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+		try {
+			execCommand("tmux", ["kill-pane", "-t", paneId.trim()]);
+		} catch {
+			// Ignore errors - pane may already be dead
+		}
+	}
 
-  setTitle(title: string): void {
-    try {
-      execCommand("tmux", ["select-pane", "-T", title]);
-    } catch {
-      // Ignore errors
-    }
-  }
+	isAlive(paneId: string): boolean {
+		if (!paneId || paneId.startsWith("iterm_") || paneId.startsWith("zellij_")) {
+			return false; // Not a tmux pane
+		}
 
-  /**
-   * tmux does not support spawning separate OS windows
-   */
-  supportsWindows(): boolean {
-    return false;
-  }
+		try {
+			execSync(`tmux has-session -t ${paneId}`);
+			return true;
+		} catch {
+			return false;
+		}
+	}
 
-  /**
-   * Not supported - throws error
-   */
-  spawnWindow(_options: SpawnOptions): string {
-    throw new Error("tmux does not support spawning separate OS windows. Use iTerm2 or WezTerm instead.");
-  }
+	setTitle(title: string): void {
+		try {
+			execCommand("tmux", ["select-pane", "-T", title]);
+		} catch {
+			// Ignore errors
+		}
+	}
 
-  /**
-   * Not supported - no-op
-   */
-  setWindowTitle(_windowId: string, _title: string): void {
-    // Not supported
-  }
+	/**
+	 * tmux does not support spawning separate OS windows
+	 */
+	supportsWindows(): boolean {
+		return false;
+	}
 
-  /**
-   * Not supported - no-op
-   */
-  killWindow(_windowId: string): void {
-    // Not supported
-  }
+	/**
+	 * Not supported - throws error
+	 */
+	spawnWindow(_options: SpawnOptions): string {
+		throw new Error("tmux does not support spawning separate OS windows. Use iTerm2 or WezTerm instead.");
+	}
 
-  /**
-   * Not supported - always returns false
-   */
-  isWindowAlive(_windowId: string): boolean {
-    return false;
-  }
+	/**
+	 * Not supported - no-op
+	 */
+	setWindowTitle(_windowId: string, _title: string): void {
+		// Not supported
+	}
+
+	/**
+	 * Not supported - no-op
+	 */
+	killWindow(_windowId: string): void {
+		// Not supported
+	}
+
+	/**
+	 * Not supported - always returns false
+	 */
+	isWindowAlive(_windowId: string): boolean {
+		return false;
+	}
 }

@@ -39,13 +39,8 @@
 
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
-import type {
-	ChannelAdapter,
-	ChannelMessage,
-	AdapterConfig,
-	OnIncomingMessage,
-} from "../types.ts";
 import { getChannelSetting } from "../config.ts";
+import type { AdapterConfig, ChannelAdapter, ChannelMessage, OnIncomingMessage } from "../types.ts";
 
 const MAX_LENGTH = 3000; // Slack block text limit; actual API limit is 4000 but leave margin
 
@@ -88,17 +83,17 @@ export type SlackAdapterLogger = (event: string, data: Record<string, unknown>, 
 
 export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: SlackAdapterLogger): ChannelAdapter {
 	// Tokens live in settings under pi-channels.slack (not in the adapter config block)
-	const appToken = (cwd ? getChannelSetting(cwd, "slack.appToken") as string : null)
-		?? config.appToken as string;
-	const botToken = (cwd ? getChannelSetting(cwd, "slack.botToken") as string : null)
-		?? config.botToken as string;
+	const appToken = (cwd ? (getChannelSetting(cwd, "slack.appToken") as string) : null) ?? (config.appToken as string);
+	const botToken = (cwd ? (getChannelSetting(cwd, "slack.botToken") as string) : null) ?? (config.botToken as string);
 
 	const allowedChannelIds = config.allowedChannelIds as string[] | undefined;
 	const respondToMentionsOnly = config.respondToMentionsOnly === true;
 	const slashCommand = (config.slashCommand as string) ?? "/aivena";
 
-	if (!appToken) throw new Error("Slack adapter requires appToken (xapp-...) in settings under pi-channels.slack.appToken");
-	if (!botToken) throw new Error("Slack adapter requires botToken (xoxb-...) in settings under pi-channels.slack.botToken");
+	if (!appToken)
+		throw new Error("Slack adapter requires appToken (xapp-...) in settings under pi-channels.slack.appToken");
+	if (!botToken)
+		throw new Error("Slack adapter requires botToken (xoxb-...) in settings under pi-channels.slack.botToken");
 
 	let socketClient: SocketModeClient | null = null;
 	const webClient = new WebClient(botToken);
@@ -119,7 +114,10 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 	}
 
 	/** Build metadata common to all incoming messages */
-	function buildMetadata(event: { channel?: string; user?: string; ts?: string; thread_ts?: string; channel_type?: string }, extra?: Record<string, unknown>): Record<string, unknown> {
+	function buildMetadata(
+		event: { channel?: string; user?: string; ts?: string; thread_ts?: string; channel_type?: string },
+		extra?: Record<string, unknown>,
+	): Record<string, unknown> {
 		return {
 			channelId: event.channel,
 			userId: event.user,
@@ -184,7 +182,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 			// Resolve bot user ID (for stripping self-mentions)
 			try {
 				const authResult = await webClient.auth.test();
-				botUserId = authResult.user_id as string ?? null;
+				botUserId = (authResult.user_id as string) ?? null;
 			} catch {
 				// Non-fatal — mention stripping just won't work
 			}
@@ -215,16 +213,20 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 					// handled by the app_mention listener to avoid duplicate responses.
 					// DMs (im) and multi-party DMs (mpim) don't fire app_mention, so we
 					// must NOT skip those here.
-					if (botUserId && (event.channel_type === "channel" || event.channel_type === "group") && event.text.includes(`<@${botUserId}>`)) return;
+					if (
+						botUserId &&
+						(event.channel_type === "channel" || event.channel_type === "group") &&
+						event.text.includes(`<@${botUserId}>`)
+					)
+						return;
 
 					// In channels/groups, optionally only respond to @mentions
 					// (app_mention events are handled separately below)
-					if (respondToMentionsOnly && (event.channel_type === "channel" || event.channel_type === "group")) return;
+					if (respondToMentionsOnly && (event.channel_type === "channel" || event.channel_type === "group"))
+						return;
 
 					// Use channel:threadTs as sender key for threaded conversations
-					const sender = event.thread_ts
-						? `${event.channel}:${event.thread_ts}`
-						: event.channel;
+					const sender = event.thread_ts ? `${event.channel}:${event.thread_ts}` : event.channel;
 
 					onMessage({
 						adapter: "slack",
@@ -234,74 +236,86 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 							eventType: "message",
 						}),
 					});
-				} catch (err) { log?.("slack-handler-error", { handler: "message", error: String(err) }, "ERROR"); }
+				} catch (err) {
+					log?.("slack-handler-error", { handler: "message", error: String(err) }, "ERROR");
+				}
 			});
 
 			// ── App mention events ──────────────────────────
-			socketClient.on("app_mention", async ({ event, ack }: { event: SlackMentionEvent; ack: () => Promise<void> }) => {
-				try {
-					await ack();
+			socketClient.on(
+				"app_mention",
+				async ({ event, ack }: { event: SlackMentionEvent; ack: () => Promise<void> }) => {
+					try {
+						await ack();
 
-					if (!isAllowed(event.channel)) return;
+						if (!isAllowed(event.channel)) return;
 
-					const sender = event.thread_ts
-						? `${event.channel}:${event.thread_ts}`
-						: event.channel;
+						const sender = event.thread_ts ? `${event.channel}:${event.thread_ts}` : event.channel;
 
-					onMessage({
-						adapter: "slack",
-						sender,
-						text: stripBotMention(event.text),
-						metadata: buildMetadata(event, {
-							eventType: "app_mention",
-						}),
-					});
-				} catch (err) { log?.("slack-handler-error", { handler: "app_mention", error: String(err) }, "ERROR"); }
-			});
+						onMessage({
+							adapter: "slack",
+							sender,
+							text: stripBotMention(event.text),
+							metadata: buildMetadata(event, {
+								eventType: "app_mention",
+							}),
+						});
+					} catch (err) {
+						log?.("slack-handler-error", { handler: "app_mention", error: String(err) }, "ERROR");
+					}
+				},
+			);
 
 			// ── Slash commands ───────────────────────────────
-			socketClient.on("slash_commands", async ({ body, ack }: { body: SlackCommandPayload; ack: (response?: any) => Promise<void> }) => {
-				try {
-					if (body.command !== slashCommand) {
-						await ack();
-						return;
+			socketClient.on(
+				"slash_commands",
+				async ({ body, ack }: { body: SlackCommandPayload; ack: (response?: any) => Promise<void> }) => {
+					try {
+						if (body.command !== slashCommand) {
+							await ack();
+							return;
+						}
+
+						if (!body.text?.trim()) {
+							await ack({ text: `Usage: ${slashCommand} [your message]` });
+							return;
+						}
+
+						if (!isAllowed(body.channel_id)) {
+							await ack({ text: "⛔ This command is not available in this channel." });
+							return;
+						}
+
+						// Acknowledge immediately (Slack requires <3s response)
+						await ack({ text: "🤔 Thinking..." });
+
+						onMessage({
+							adapter: "slack",
+							sender: body.channel_id,
+							text: body.text.trim(),
+							metadata: {
+								channelId: body.channel_id,
+								channelName: body.channel_name,
+								userId: body.user_id,
+								userName: body.user_name,
+								eventType: "slash_command",
+								command: body.command,
+							},
+						});
+					} catch (err) {
+						log?.("slack-handler-error", { handler: "slash_commands", error: String(err) }, "ERROR");
 					}
-
-					if (!body.text?.trim()) {
-						await ack({ text: `Usage: ${slashCommand} [your message]` });
-						return;
-					}
-
-					if (!isAllowed(body.channel_id)) {
-						await ack({ text: "⛔ This command is not available in this channel." });
-						return;
-					}
-
-					// Acknowledge immediately (Slack requires <3s response)
-					await ack({ text: "🤔 Thinking..." });
-
-					onMessage({
-						adapter: "slack",
-						sender: body.channel_id,
-						text: body.text.trim(),
-						metadata: {
-							channelId: body.channel_id,
-							channelName: body.channel_name,
-							userId: body.user_id,
-							userName: body.user_name,
-							eventType: "slash_command",
-							command: body.command,
-						},
-					});
-				} catch (err) { log?.("slack-handler-error", { handler: "slash_commands", error: String(err) }, "ERROR"); }
-			});
+				},
+			);
 
 			// ── Interactive payloads (future: button clicks, modals) ──
 			socketClient.on("interactive", async ({ body, ack }: { body: any; ack: () => Promise<void> }) => {
 				try {
 					await ack();
 					// TODO: handle interactive payloads (block actions, modals)
-				} catch (err) { log?.("slack-handler-error", { handler: "interactive", error: String(err) }, "ERROR"); }
+				} catch (err) {
+					log?.("slack-handler-error", { handler: "interactive", error: String(err) }, "ERROR");
+				}
 			});
 
 			await socketClient.start();

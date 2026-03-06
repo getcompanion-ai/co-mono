@@ -6,8 +6,8 @@
  * Same pattern as pi-cron and pi-heartbeat.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
-import type { RunResult, IncomingAttachment } from "../types.ts";
+import { type ChildProcess, spawn } from "node:child_process";
+import type { IncomingAttachment, RunResult } from "../types.ts";
 
 export interface RunOptions {
 	prompt: string;
@@ -56,25 +56,37 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 			});
 		} catch (err: any) {
 			resolve({
-				ok: false, response: "", error: `Failed to spawn: ${err.message}`,
-				durationMs: Date.now() - startTime, exitCode: 1,
+				ok: false,
+				response: "",
+				error: `Failed to spawn: ${err.message}`,
+				durationMs: Date.now() - startTime,
+				exitCode: 1,
 			});
 			return;
 		}
 
 		let stdout = "";
 		let stderr = "";
-		child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-		child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+		child.stdout?.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString();
+		});
+		child.stderr?.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString();
+		});
 
 		const onAbort = () => {
 			child.kill("SIGTERM");
-			setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 3000);
+			setTimeout(() => {
+				if (!child.killed) child.kill("SIGKILL");
+			}, 3000);
 		};
 
 		if (signal) {
-			if (signal.aborted) { onAbort(); }
-			else { signal.addEventListener("abort", onAbort, { once: true }); }
+			if (signal.aborted) {
+				onAbort();
+			} else {
+				signal.addEventListener("abort", onAbort, { once: true });
+			}
 		}
 
 		child.on("close", (code) => {
@@ -84,7 +96,13 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 			const exitCode = code ?? 1;
 
 			if (signal?.aborted) {
-				resolve({ ok: false, response: response || "(aborted)", error: "Aborted by user", durationMs, exitCode: 130 });
+				resolve({
+					ok: false,
+					response: response || "(aborted)",
+					error: "Aborted by user",
+					durationMs,
+					exitCode: 130,
+				});
 			} else if (exitCode !== 0) {
 				resolve({ ok: false, response, error: stderr.trim() || `Exit code ${exitCode}`, durationMs, exitCode });
 			} else {

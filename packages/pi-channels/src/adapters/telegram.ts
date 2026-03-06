@@ -26,15 +26,15 @@
  */
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import type {
+	AdapterConfig,
 	ChannelAdapter,
 	ChannelMessage,
-	AdapterConfig,
-	OnIncomingMessage,
-	IncomingMessage,
 	IncomingAttachment,
+	IncomingMessage,
+	OnIncomingMessage,
 	TranscriptionConfig,
 } from "../types.ts";
 import { createTranscriptionProvider, type TranscriptionProvider } from "./transcription.ts";
@@ -63,12 +63,49 @@ const TEXT_MIME_TYPES = new Set([
 
 /** File extensions we treat as text even if MIME is generic (application/octet-stream). */
 const TEXT_EXTENSIONS = new Set([
-	".md", ".markdown", ".txt", ".csv", ".json", ".jsonl", ".yaml", ".yml",
-	".toml", ".xml", ".html", ".htm", ".css", ".js", ".ts", ".tsx", ".jsx",
-	".py", ".rs", ".go", ".rb", ".php", ".java", ".kt", ".c", ".cpp", ".h",
-	".sh", ".bash", ".zsh", ".fish", ".sql", ".graphql", ".gql",
-	".env", ".ini", ".cfg", ".conf", ".properties", ".log",
-	".gitignore", ".dockerignore", ".editorconfig",
+	".md",
+	".markdown",
+	".txt",
+	".csv",
+	".json",
+	".jsonl",
+	".yaml",
+	".yml",
+	".toml",
+	".xml",
+	".html",
+	".htm",
+	".css",
+	".js",
+	".ts",
+	".tsx",
+	".jsx",
+	".py",
+	".rs",
+	".go",
+	".rb",
+	".php",
+	".java",
+	".kt",
+	".c",
+	".cpp",
+	".h",
+	".sh",
+	".bash",
+	".zsh",
+	".fish",
+	".sql",
+	".graphql",
+	".gql",
+	".env",
+	".ini",
+	".cfg",
+	".conf",
+	".properties",
+	".log",
+	".gitignore",
+	".dockerignore",
+	".editorconfig",
 ]);
 
 /** Image MIME prefixes. */
@@ -80,15 +117,22 @@ function isImageMime(mime: string | undefined): boolean {
 /** Audio MIME types that can be transcribed. */
 const AUDIO_MIME_PREFIXES = ["audio/"];
 const AUDIO_MIME_TYPES = new Set([
-	"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm",
-	"audio/x-m4a", "audio/flac", "audio/aac", "audio/mp3",
+	"audio/mpeg",
+	"audio/mp4",
+	"audio/ogg",
+	"audio/wav",
+	"audio/webm",
+	"audio/x-m4a",
+	"audio/flac",
+	"audio/aac",
+	"audio/mp3",
 	"video/ogg", // .ogg containers can be audio-only
 ]);
 
 function isAudioMime(mime: string | undefined): boolean {
 	if (!mime) return false;
 	if (AUDIO_MIME_TYPES.has(mime)) return true;
-	return AUDIO_MIME_PREFIXES.some(p => mime.startsWith(p));
+	return AUDIO_MIME_PREFIXES.some((p) => mime.startsWith(p));
 }
 
 function isTextDocument(mimeType: string | undefined, filename: string | undefined): boolean {
@@ -166,13 +210,17 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 	 * Download a file from Telegram by file_id.
 	 * Returns { path, size } or null on failure.
 	 */
-	async function downloadFile(fileId: string, suggestedName?: string, maxSize = MAX_FILE_SIZE): Promise<{ localPath: string; size: number } | null> {
+	async function downloadFile(
+		fileId: string,
+		suggestedName?: string,
+		maxSize = MAX_FILE_SIZE,
+	): Promise<{ localPath: string; size: number } | null> {
 		try {
 			// Get file info
 			const infoRes = await fetch(`${apiBase}/getFile?file_id=${fileId}`);
 			if (!infoRes.ok) return null;
 
-			const info = await infoRes.json() as {
+			const info = (await infoRes.json()) as {
 				ok: boolean;
 				result?: { file_id: string; file_size?: number; file_path?: string };
 			};
@@ -237,7 +285,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 					continue;
 				}
 
-				const data = await res.json() as {
+				const data = (await res.json()) as {
 					ok: boolean;
 					result: Array<{ update_id: number; message?: TelegramMessage }>;
 				};
@@ -574,7 +622,11 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 
 	function cleanupTempFiles(): void {
 		for (const f of tempFiles) {
-			try { fs.unlinkSync(f); } catch { /* ignore */ }
+			try {
+				fs.unlinkSync(f);
+			} catch {
+				/* ignore */
+			}
 		}
 		tempFiles.length = 0;
 	}
@@ -663,7 +715,7 @@ interface TelegramMessage {
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatSize(bytes: number): string {

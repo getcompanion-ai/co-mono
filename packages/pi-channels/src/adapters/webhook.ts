@@ -11,7 +11,7 @@
  * }
  */
 
-import type { ChannelAdapter, ChannelMessage, AdapterConfig } from "../types.ts";
+import type { AdapterConfig, ChannelAdapter, ChannelMessage } from "../types.ts";
 
 export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
 	const method = (config.method as string) ?? "POST";
