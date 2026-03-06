@@ -7,7 +7,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import type { IncomingAttachment, RunResult } from "../types.ts";
+import type { IncomingAttachment, RunResult } from "../types.js";
 
 export interface RunOptions {
 	prompt: string;

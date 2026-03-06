@@ -43,6 +43,26 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface GatewaySessionSettings {
+	idleMinutes?: number;
+	maxQueuePerSession?: number;
+}
+
+export interface GatewayWebhookSettings {
+	enabled?: boolean;
+	basePath?: string;
+	secret?: string;
+}
+
+export interface GatewaySettings {
+	enabled?: boolean;
+	bind?: string;
+	port?: number;
+	bearerToken?: string;
+	session?: GatewaySessionSettings;
+	webhook?: GatewayWebhookSettings;
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -93,6 +113,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	gateway?: GatewaySettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -911,5 +932,9 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getGatewaySettings(): GatewaySettings {
+		return structuredClone(this.settings.gateway ?? {});
 	}
 }

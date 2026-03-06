@@ -6,7 +6,7 @@
  * For adapters without sendTyping, this is a no-op.
  */
 
-import type { ChannelAdapter } from "../types.ts";
+import type { ChannelAdapter } from "../types.js";
 
 const TYPING_INTERVAL_MS = 4_000;
 

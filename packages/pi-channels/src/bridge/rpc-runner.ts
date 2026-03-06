@@ -14,7 +14,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import type { IncomingAttachment, RunResult } from "../types.ts";
+import type { IncomingAttachment, RunResult } from "../types.js";
 
 export interface RpcRunnerOptions {
 	cwd: string;
@@ -118,95 +118,97 @@ export class RpcSession {
 			onStreaming?: (text: string) => void;
 		},
 	): Promise<RunResult> {
-		return new Promise(async (resolve) => {
-			// Ensure subprocess is running
-			if (!this.ready) {
-				const ok = await this.start();
-				if (!ok) {
-					resolve({
-						ok: false,
-						response: "",
-						error: "Failed to start RPC session",
-						durationMs: 0,
-						exitCode: 1,
-					});
-					return;
-				}
-			}
-
-			const startTime = Date.now();
-			this._onStreaming = options?.onStreaming ?? null;
-
-			// Timeout
-			const timer = setTimeout(() => {
-				if (this.pending) {
-					const p = this.pending;
-					this.pending = null;
-					const text = p.textChunks.join("");
-					p.resolve({
-						ok: false,
-						response: text || "(timed out)",
-						error: "Timeout",
-						durationMs: Date.now() - p.startTime,
-						exitCode: 124,
-					});
-					// Kill and restart on next message
-					this.cleanup();
-				}
-			}, this.options.timeoutMs);
-
-			this.pending = { resolve, startTime, timer, textChunks: [] };
-
-			// Abort handler
-			const onAbort = () => {
-				this.sendCommand({ type: "abort" });
-			};
-			if (options?.signal) {
-				if (options.signal.aborted) {
-					clearTimeout(timer);
-					this.pending = null;
-					this.sendCommand({ type: "abort" });
-					resolve({
-						ok: false,
-						response: "(aborted)",
-						error: "Aborted by user",
-						durationMs: Date.now() - startTime,
-						exitCode: 130,
-					});
-					return;
-				}
-				options.signal.addEventListener("abort", onAbort, { once: true });
-				this.pending.abortHandler = () => options.signal?.removeEventListener("abort", onAbort);
-			}
-
-			// Build prompt command
-			const cmd: Record<string, unknown> = {
-				type: "prompt",
-				message: prompt,
-			};
-
-			// Attach images as base64
-			if (options?.attachments?.length) {
-				const images: Array<Record<string, string>> = [];
-				for (const att of options.attachments) {
-					if (att.type === "image") {
-						try {
-							const fs = await import("node:fs");
-							const data = fs.readFileSync(att.path).toString("base64");
-							images.push({
-								type: "image",
-								data,
-								mimeType: att.mimeType || "image/jpeg",
-							});
-						} catch {
-							// Skip unreadable attachments
-						}
+		return new Promise((resolve) => {
+			void (async () => {
+				// Ensure subprocess is running
+				if (!this.ready) {
+					const ok = await this.start();
+					if (!ok) {
+						resolve({
+							ok: false,
+							response: "",
+							error: "Failed to start RPC session",
+							durationMs: 0,
+							exitCode: 1,
+						});
+						return;
 					}
 				}
-				if (images.length > 0) cmd.images = images;
-			}
 
-			this.sendCommand(cmd);
+				const startTime = Date.now();
+				this._onStreaming = options?.onStreaming ?? null;
+
+				// Timeout
+				const timer = setTimeout(() => {
+					if (this.pending) {
+						const p = this.pending;
+						this.pending = null;
+						const text = p.textChunks.join("");
+						p.resolve({
+							ok: false,
+							response: text || "(timed out)",
+							error: "Timeout",
+							durationMs: Date.now() - p.startTime,
+							exitCode: 124,
+						});
+						// Kill and restart on next message
+						this.cleanup();
+					}
+				}, this.options.timeoutMs);
+
+				this.pending = { resolve, startTime, timer, textChunks: [] };
+
+				// Abort handler
+				const onAbort = () => {
+					this.sendCommand({ type: "abort" });
+				};
+				if (options?.signal) {
+					if (options.signal.aborted) {
+						clearTimeout(timer);
+						this.pending = null;
+						this.sendCommand({ type: "abort" });
+						resolve({
+							ok: false,
+							response: "(aborted)",
+							error: "Aborted by user",
+							durationMs: Date.now() - startTime,
+							exitCode: 130,
+						});
+						return;
+					}
+					options.signal.addEventListener("abort", onAbort, { once: true });
+					this.pending.abortHandler = () => options.signal?.removeEventListener("abort", onAbort);
+				}
+
+				// Build prompt command
+				const cmd: Record<string, unknown> = {
+					type: "prompt",
+					message: prompt,
+				};
+
+				// Attach images as base64
+				if (options?.attachments?.length) {
+					const images: Array<Record<string, string>> = [];
+					for (const att of options.attachments) {
+						if (att.type === "image") {
+							try {
+								const fs = await import("node:fs");
+								const data = fs.readFileSync(att.path).toString("base64");
+								images.push({
+									type: "image",
+									data,
+									mimeType: att.mimeType || "image/jpeg",
+								});
+							} catch {
+								// Skip unreadable attachments
+							}
+						}
+					}
+					if (images.length > 0) cmd.images = images;
+				}
+
+				this.sendCommand(cmd);
+			})();
 		});
 	}
 
@@ -253,7 +255,7 @@ export class RpcSession {
 
 	private sendCommand(cmd: Record<string, unknown>): void {
 		if (!this.child?.stdin?.writable) return;
-		this.child.stdin.write(JSON.stringify(cmd) + "\n");
+		this.child.stdin.write(`${JSON.stringify(cmd)}\n`);
 	}
 
 	private handleLine(line: string): void {
@@ -358,7 +360,7 @@ export class RpcSessionManager {
 	/** Get or create a session for a sender. */
 	async getSession(senderKey: string): Promise<RpcSession> {
 		let session = this.sessions.get(senderKey);
-		if (session && session.isAlive()) {
+		if (session?.isAlive()) {
 			this.resetIdleTimer(senderKey);
 			return session;
 		}
@@ -403,7 +405,7 @@ export class RpcSessionManager {
 
 	/** Kill all sessions. */
 	killAll(): void {
-		for (const [key, session] of this.sessions) {
+		for (const session of this.sessions.values()) {
 			session.cleanup();
 		}
 		this.sessions.clear();

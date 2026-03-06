@@ -103,6 +103,8 @@ export async function broadcastMessage(
 	if (failures.length > 0) {
 		console.error(`Broadcast partially failed: ${failures.length} messages could not be delivered.`);
 		// Optionally log individual errors
-		failures.forEach((f) => console.error(`- Delivery error:`, f.reason));
+		for (const failure of failures) {
+			console.error("- Delivery error:", failure.reason);
+		}
 	}
 }

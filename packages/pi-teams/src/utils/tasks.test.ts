@@ -6,10 +6,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as paths from "./paths";
 import { createTask, evaluatePlan, listTasks, readTask, submitPlan, updateTask } from "./tasks";
-import * as teams from "./teams";
 
 // Mock the paths to use a temporary directory
-const testDir = path.join(os.tmpdir(), "pi-teams-test-" + Date.now());
+const testDir = path.join(os.tmpdir(), `pi-teams-test-${Date.now()}`);
 
 describe("Tasks Utilities", () => {
 	beforeEach(() => {

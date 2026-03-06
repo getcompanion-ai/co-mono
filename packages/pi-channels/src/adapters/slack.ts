@@ -39,8 +39,8 @@
 
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
-import { getChannelSetting } from "../config.ts";
-import type { AdapterConfig, ChannelAdapter, ChannelMessage, OnIncomingMessage } from "../types.ts";
+import { getChannelSetting } from "../config.js";
+import type { AdapterConfig, ChannelAdapter, ChannelMessage, OnIncomingMessage } from "../types.js";
 
 const MAX_LENGTH = 3000; // Slack block text limit; actual API limit is 4000 but leave margin
 
@@ -146,7 +146,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 	return {
 		direction: "bidirectional" as const,
 
-		async sendTyping(recipient: string): Promise<void> {
+		async sendTyping(_recipient: string): Promise<void> {
 			// Slack doesn't have a direct "typing" API for bots in channels.
 			// We can use a reaction or simply no-op. For DMs, there's no API either.
 			// Best we can do is nothing — Slack bots don't show typing indicators.
@@ -309,7 +309,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 			);
 
 			// ── Interactive payloads (future: button clicks, modals) ──
-			socketClient.on("interactive", async ({ body, ack }: { body: any; ack: () => Promise<void> }) => {
+			socketClient.on("interactive", async ({ body: _body, ack }: { body: any; ack: () => Promise<void> }) => {
 				try {
 					await ack();
 					// TODO: handle interactive payloads (block actions, modals)

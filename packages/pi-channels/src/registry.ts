@@ -2,9 +2,9 @@
  * pi-channels — Adapter registry + route resolution.
  */
 
-import { createSlackAdapter } from "./adapters/slack.ts";
-import { createTelegramAdapter } from "./adapters/telegram.ts";
-import { createWebhookAdapter } from "./adapters/webhook.ts";
+import { createSlackAdapter } from "./adapters/slack.js";
+import { createTelegramAdapter } from "./adapters/telegram.js";
+import { createWebhookAdapter } from "./adapters/webhook.js";
 import type {
 	AdapterConfig,
 	AdapterDirection,
@@ -13,7 +13,7 @@ import type {
 	ChannelMessage,
 	IncomingMessage,
 	OnIncomingMessage,
-} from "./types.ts";
+} from "./types.js";
 
 // ── Built-in adapter factories ──────────────────────────────────
 

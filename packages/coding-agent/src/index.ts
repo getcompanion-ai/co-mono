@@ -140,6 +140,19 @@ export {
 } from "./core/extensions/index.js";
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
+export {
+	createGatewaySessionManager,
+	type GatewayConfig,
+	type GatewayMessageRequest,
+	type GatewayMessageResult,
+	GatewayRuntime,
+	type GatewayRuntimeOptions,
+	type GatewaySessionFactory,
+	type GatewaySessionSnapshot,
+	getActiveGatewayRuntime,
+	sanitizeSessionKey,
+	setActiveGatewayRuntime,
+} from "./core/gateway-runtime.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 export type {
@@ -198,6 +211,7 @@ export {
 } from "./core/session-manager.js";
 export {
 	type CompactionSettings,
+	type GatewaySettings,
 	type ImageSettings,
 	type PackageSource,
 	type RetrySettings,

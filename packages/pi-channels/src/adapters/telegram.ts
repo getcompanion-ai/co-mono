@@ -36,8 +36,8 @@ import type {
 	IncomingMessage,
 	OnIncomingMessage,
 	TranscriptionConfig,
-} from "../types.ts";
-import { createTranscriptionProvider, type TranscriptionProvider } from "./transcription.ts";
+} from "../types.js";
+import { createTranscriptionProvider, type TranscriptionProvider } from "./transcription.js";
 
 const MAX_LENGTH = 4096;
 const MAX_FILE_SIZE = 1_048_576; // 1MB
@@ -388,7 +388,6 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 					};
 				}
 
-				const ext = path.extname(filename || "").toLowerCase();
 				const attachment: IncomingAttachment = {
 					type: "image",
 					path: downloaded.localPath,
@@ -472,7 +471,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 					return {
 						adapter: "telegram",
 						sender: chatId,
-						text: `🎵 ${filename || "audio"} (transcription failed${result.error ? ": " + result.error : ""})`,
+						text: `🎵 ${filename || "audio"} (transcription failed${result.error ? `: ${result.error}` : ""})`,
 						metadata: { ...metadata, hasAudio: true },
 					};
 				}
@@ -535,7 +534,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				return {
 					adapter: "telegram",
 					sender: chatId,
-					text: `🎤 (voice message — transcription failed${result.error ? ": " + result.error : ""})`,
+					text: `🎤 (voice message — transcription failed${result.error ? `: ${result.error}` : ""})`,
 					metadata: { ...metadata, hasVoice: true, voiceDuration: voice.duration },
 				};
 			}
@@ -588,7 +587,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				return {
 					adapter: "telegram",
 					sender: chatId,
-					text: `🎵 ${audioName} (transcription failed${result.error ? ": " + result.error : ""})`,
+					text: `🎵 ${audioName} (transcription failed${result.error ? `: ${result.error}` : ""})`,
 					metadata: { ...metadata, hasAudio: true, audioTitle: audio.title, audioDuration: audio.duration },
 				};
 			}

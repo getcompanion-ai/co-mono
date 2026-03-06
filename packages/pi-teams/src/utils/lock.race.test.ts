@@ -1,13 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { withLock } from "./lock";
 
 describe("withLock race conditions", () => {
-	const testDir = path.join(os.tmpdir(), "pi-lock-race-test-" + Date.now());
+	const testDir = path.join(os.tmpdir(), `pi-lock-race-test-${Date.now()}`);
 	const lockPath = path.join(testDir, "test");
-	const lockFile = `${lockPath}.lock`;
 
 	beforeEach(() => {
 		if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true });

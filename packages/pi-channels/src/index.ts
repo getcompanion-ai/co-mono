@@ -35,12 +35,12 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { ChatBridge } from "./bridge/bridge.ts";
-import { loadConfig } from "./config.ts";
-import { registerChannelEvents, setBridge } from "./events.ts";
-import { createLogger } from "./logger.ts";
-import { ChannelRegistry } from "./registry.ts";
-import { registerChannelTool } from "./tool.ts";
+import { ChatBridge } from "./bridge/bridge.js";
+import { loadConfig } from "./config.js";
+import { registerChannelEvents, setBridge } from "./events.js";
+import { createLogger } from "./logger.js";
+import { ChannelRegistry } from "./registry.js";
+import { registerChannelTool } from "./tool.js";
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);

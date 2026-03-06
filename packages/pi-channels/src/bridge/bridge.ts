@@ -2,18 +2,18 @@
  * pi-channels — Chat bridge.
  *
  * Listens for incoming messages (channel:receive), serializes per sender,
- * runs prompts via isolated subprocesses, and sends responses back via
- * the same adapter. Each sender gets their own FIFO queue. Multiple
- * senders run concurrently up to maxConcurrent.
+ * routes prompts into the live pi gateway runtime, and sends responses
+ * back via the same adapter. Each sender gets their own FIFO queue.
+ * Multiple senders run concurrently up to maxConcurrent.
  */
 
-import type { EventBus } from "@mariozechner/pi-coding-agent";
-import type { ChannelRegistry } from "../registry.ts";
-import type { BridgeConfig, IncomingAttachment, IncomingMessage, QueuedPrompt, SenderSession } from "../types.ts";
-import { type CommandContext, handleCommand, isCommand } from "./commands.ts";
-import { RpcSessionManager } from "./rpc-runner.ts";
-import { runPrompt } from "./runner.ts";
-import { startTyping } from "./typing.ts";
+import { readFileSync } from "node:fs";
+import type { ImageContent } from "@mariozechner/pi-ai";
+import { type EventBus, getActiveGatewayRuntime } from "@mariozechner/pi-coding-agent";
+import type { ChannelRegistry } from "../registry.js";
+import type { BridgeConfig, IncomingMessage, QueuedPrompt, SenderSession } from "../types.js";
+import { type CommandContext, handleCommand, isCommand } from "./commands.js";
+import { startTyping } from "./typing.js";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	enabled: false,
@@ -38,24 +38,21 @@ function nextId(): string {
 
 export class ChatBridge {
 	private config: Required<BridgeConfig>;
-	private cwd: string;
 	private registry: ChannelRegistry;
 	private events: EventBus;
 	private log: LogFn;
 	private sessions = new Map<string, SenderSession>();
 	private activeCount = 0;
 	private running = false;
-	private rpcManager: RpcSessionManager | null = null;
 
 	constructor(
 		bridgeConfig: BridgeConfig | undefined,
-		cwd: string,
+		_cwd: string,
 		registry: ChannelRegistry,
 		events: EventBus,
 		log: LogFn = () => {},
 	) {
 		this.config = { ...BRIDGE_DEFAULTS, ...bridgeConfig };
-		this.cwd = cwd;
 		this.registry = registry;
 		this.events = events;
 		this.log = log;
@@ -65,18 +62,11 @@ export class ChatBridge {
 
 	start(): void {
 		if (this.running) return;
+		if (!getActiveGatewayRuntime()) {
+			this.log("bridge-unavailable", { reason: "no active pi gateway runtime" }, "WARN");
+			return;
+		}
 		this.running = true;
-
-		// Always create the RPC manager — it's used on-demand for persistent senders
-		this.rpcManager = new RpcSessionManager(
-			{
-				cwd: this.cwd,
-				model: this.config.model,
-				timeoutMs: this.config.timeoutMs,
-				extensions: this.config.extensions,
-			},
-			this.config.idleTimeoutMinutes * 60_000,
-		);
 	}
 
 	stop(): void {
@@ -86,8 +76,6 @@ export class ChatBridge {
 		}
 		this.sessions.clear();
 		this.activeCount = 0;
-		this.rpcManager?.killAll();
-		this.rpcManager = null;
 	}
 
 	isActive(): boolean {
@@ -180,38 +168,32 @@ export class ChatBridge {
 		// Typing indicator
 		const adapter = this.registry.getAdapter(prompt.adapter);
 		const typing = this.config.typingIndicators ? startTyping(adapter, prompt.sender) : { stop() {} };
-
-		const ac = new AbortController();
-		session.abortController = ac;
-
-		const usePersistent = this.shouldUsePersistent(senderKey);
+		const gateway = getActiveGatewayRuntime();
+		if (!gateway) {
+			typing.stop();
+			session.processing = false;
+			this.activeCount--;
+			this.sendReply(prompt.adapter, prompt.sender, "❌ pi gateway is not running.");
+			return;
+		}
 
 		this.events.emit("bridge:start", {
 			id: prompt.id,
 			adapter: prompt.adapter,
 			sender: prompt.sender,
 			text: prompt.text.slice(0, 100),
-			persistent: usePersistent,
+			persistent: true,
 		});
 
 		try {
-			let result;
-
-			if (usePersistent && this.rpcManager) {
-				// Persistent mode: use RPC session
-				result = await this.runWithRpc(senderKey, prompt, ac.signal);
-			} else {
-				// Stateless mode: spawn subprocess
-				result = await runPrompt({
-					prompt: prompt.text,
-					cwd: this.cwd,
-					timeoutMs: this.config.timeoutMs,
-					model: this.config.model,
-					signal: ac.signal,
-					attachments: prompt.attachments,
-					extensions: this.config.extensions,
-				});
-			}
+			session.abortController = new AbortController();
+			const result = await gateway.enqueueMessage({
+				sessionKey: senderKey,
+				text: buildPromptText(prompt),
+				images: collectImageAttachments(prompt.attachments),
+				source: "extension",
+				metadata: prompt.metadata,
+			});
 
 			typing.stop();
 
@@ -229,8 +211,7 @@ export class ChatBridge {
 				adapter: prompt.adapter,
 				sender: prompt.sender,
 				ok: result.ok,
-				durationMs: result.durationMs,
-				persistent: usePersistent,
+				persistent: true,
 			});
 			this.log(
 				"bridge-complete",
@@ -238,15 +219,15 @@ export class ChatBridge {
 					id: prompt.id,
 					adapter: prompt.adapter,
 					ok: result.ok,
-					durationMs: result.durationMs,
-					persistent: usePersistent,
+					persistent: true,
 				},
 				result.ok ? "INFO" : "WARN",
 			);
-		} catch (err: any) {
+		} catch (err: unknown) {
 			typing.stop();
-			this.log("bridge-error", { adapter: prompt.adapter, sender: prompt.sender, error: err.message }, "ERROR");
-			this.sendReply(prompt.adapter, prompt.sender, `❌ Unexpected error: ${err.message}`);
+			const message = err instanceof Error ? err.message : String(err);
+			this.log("bridge-error", { adapter: prompt.adapter, sender: prompt.sender, error: message }, "ERROR");
+			this.sendReply(prompt.adapter, prompt.sender, `❌ Unexpected error: ${message}`);
 		} finally {
 			session.abortController = null;
 			session.processing = false;
@@ -254,29 +235,6 @@ export class ChatBridge {
 
 			if (session.queue.length > 0) this.processNext(senderKey);
 			this.drainWaiting();
-		}
-	}
-
-	/** Run a prompt via persistent RPC session. */
-	private async runWithRpc(
-		senderKey: string,
-		prompt: QueuedPrompt,
-		signal?: AbortSignal,
-	): Promise<import("../types.ts").RunResult> {
-		try {
-			const rpcSession = await this.rpcManager!.getSession(senderKey);
-			return await rpcSession.runPrompt(prompt.text, {
-				signal,
-				attachments: prompt.attachments,
-			});
-		} catch (err: any) {
-			return {
-				ok: false,
-				response: "",
-				error: err.message,
-				durationMs: 0,
-				exitCode: 1,
-			};
 		}
 	}
 
@@ -327,37 +285,17 @@ export class ChatBridge {
 		return this.sessions;
 	}
 
-	// ── Session mode resolution ───────────────────────────────
-
-	/**
-	 * Determine if a sender should use persistent (RPC) or stateless mode.
-	 * Checks sessionRules first (first match wins), falls back to sessionMode default.
-	 */
-	private shouldUsePersistent(senderKey: string): boolean {
-		for (const rule of this.config.sessionRules) {
-			if (globMatch(rule.match, senderKey)) {
-				return rule.mode === "persistent";
-			}
-		}
-		return this.config.sessionMode === "persistent";
-	}
-
 	// ── Command context ───────────────────────────────────────
 
 	private commandContext(): CommandContext {
+		const gateway = getActiveGatewayRuntime();
 		return {
-			isPersistent: (sender: string) => {
-				// Find the sender key to check mode
-				for (const [key, session] of this.sessions) {
-					if (session.sender === sender) return this.shouldUsePersistent(key);
-				}
-				return this.config.sessionMode === "persistent";
-			},
+			isPersistent: () => true,
 			abortCurrent: (sender: string): boolean => {
-				for (const session of this.sessions.values()) {
+				if (!gateway) return false;
+				for (const [key, session] of this.sessions) {
 					if (session.sender === sender && session.abortController) {
-						session.abortController.abort();
-						return true;
+						return gateway.abortSession(key);
 					}
 				}
 				return false;
@@ -368,13 +306,11 @@ export class ChatBridge {
 				}
 			},
 			resetSession: (sender: string): void => {
+				if (!gateway) return;
 				for (const [key, session] of this.sessions) {
 					if (session.sender === sender) {
 						this.sessions.delete(key);
-						// Also reset persistent RPC session
-						if (this.rpcManager) {
-							this.rpcManager.resetSession(key).catch(() => {});
-						}
+						void gateway.resetSession(key);
 					}
 				}
 			},
@@ -386,21 +322,6 @@ export class ChatBridge {
 	private sendReply(adapter: string, recipient: string, text: string): void {
 		this.registry.send({ adapter, recipient, text });
 	}
-}
-
-// ── Helpers ───────────────────────────────────────────────────
-
-/**
- * Simple glob matcher supporting `*` (any chars) and `?` (single char).
- * Used for sessionRules pattern matching against "adapter:senderId" keys.
- */
-function globMatch(pattern: string, text: string): boolean {
-	// Escape regex special chars except * and ?
-	const re = pattern
-		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		.replace(/\*/g, ".*")
-		.replace(/\?/g, ".");
-	return new RegExp(`^${re}$`).test(text);
 }
 
 const MAX_ERROR_LENGTH = 200;
@@ -428,5 +349,36 @@ function sanitizeError(error: string | undefined): string {
 
 	const msg = meaningful?.trim() || "Something went wrong. Please try again.";
 
-	return msg.length > MAX_ERROR_LENGTH ? msg.slice(0, MAX_ERROR_LENGTH) + "…" : msg;
+	return msg.length > MAX_ERROR_LENGTH ? `${msg.slice(0, MAX_ERROR_LENGTH)}…` : msg;
+}
+
+function collectImageAttachments(attachments: QueuedPrompt["attachments"]): ImageContent[] | undefined {
+	if (!attachments || attachments.length === 0) {
+		return undefined;
+	}
+	const images = attachments
+		.filter((attachment) => attachment.type === "image")
+		.map((attachment) => ({
+			type: "image" as const,
+			data: readFileSync(attachment.path).toString("base64"),
+			mimeType: attachment.mimeType || "image/jpeg",
+		}));
+	return images.length > 0 ? images : undefined;
+}
+
+function buildPromptText(prompt: QueuedPrompt): string {
+	if (!prompt.attachments || prompt.attachments.length === 0) {
+		return prompt.text;
+	}
+
+	const attachmentNotes = prompt.attachments
+		.filter((attachment) => attachment.type !== "image")
+		.map((attachment) => {
+			const label = attachment.filename ?? attachment.path;
+			return `Attachment (${attachment.type}): ${label}`;
+		});
+	if (attachmentNotes.length === 0) {
+		return prompt.text;
+	}
+	return `${prompt.text}\n\n${attachmentNotes.join("\n")}`;
 }

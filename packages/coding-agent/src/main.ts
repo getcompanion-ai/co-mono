@@ -5,6 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { join } from "node:path";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { createInterface } from "readline";
@@ -17,6 +18,7 @@ import { APP_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { LoadExtensionsResult } from "./core/extensions/index.js";
+import { createGatewaySessionManager } from "./core/gateway-runtime.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
@@ -81,9 +83,10 @@ interface PackageCommandOptions {
 
 function printDaemonHelp(): void {
 	console.log(`${chalk.bold("Usage:")}
+  ${APP_NAME} gateway [options] [messages...]
   ${APP_NAME} daemon [options] [messages...]
 
-Run pi as a long-lived daemon (non-interactive) with extensions enabled.
+Run pi as a long-lived gateway (non-interactive) with extensions enabled.
 Messages passed as positional args are sent once at startup.
 
 Options:
@@ -553,9 +556,9 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 }
 
 export async function main(args: string[]) {
-	const isDaemonCommand = args[0] === "daemon";
-	const parsedArgs = isDaemonCommand ? args.slice(1) : args;
-	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
+	const isGatewayCommand = args[0] === "daemon" || args[0] === "gateway";
+	const parsedArgs = isGatewayCommand ? args.slice(1) : args;
+	const offlineMode = parsedArgs.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
 		process.env.PI_OFFLINE = "1";
 		process.env.PI_SKIP_VERSION_CHECK = "1";
@@ -634,7 +637,7 @@ export async function main(args: string[]) {
 	}
 
 	if (parsed.help) {
-		if (isDaemonCommand) {
+		if (isGatewayCommand) {
 			printDaemonHelp();
 		} else {
 			printHelp();
@@ -648,13 +651,13 @@ export async function main(args: string[]) {
 		process.exit(0);
 	}
 
-	if (isDaemonCommand && parsed.mode === "rpc") {
-		console.error(chalk.red("Cannot use --mode rpc with the daemon command."));
+	if (isGatewayCommand && parsed.mode === "rpc") {
+		console.error(chalk.red("Cannot use --mode rpc with the gateway command."));
 		process.exit(1);
 	}
 
 	// Read piped stdin content (if any) - skip for daemon and RPC modes
-	if (!isDaemonCommand && parsed.mode !== "rpc") {
+	if (!isGatewayCommand && parsed.mode !== "rpc") {
 		const stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined) {
 			// Force print mode since interactive mode requires a TTY for keyboard input
@@ -684,7 +687,7 @@ export async function main(args: string[]) {
 	}
 
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
-	const isInteractive = !isDaemonCommand && !parsed.print && parsed.mode === undefined;
+	const isInteractive = !isGatewayCommand && !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 	initTheme(settingsManager.getTheme(), isInteractive);
 
@@ -789,11 +792,44 @@ export async function main(args: string[]) {
 			verbose: parsed.verbose,
 		});
 		await mode.run();
-	} else if (isDaemonCommand) {
+	} else if (isGatewayCommand) {
+		const gatewayLoaderOptions = {
+			additionalExtensionPaths: firstPass.extensions,
+			additionalSkillPaths: firstPass.skills,
+			additionalPromptTemplatePaths: firstPass.promptTemplates,
+			additionalThemePaths: firstPass.themes,
+			noExtensions: firstPass.noExtensions,
+			noSkills: firstPass.noSkills,
+			noPromptTemplates: firstPass.noPromptTemplates,
+			noThemes: firstPass.noThemes,
+			systemPrompt: firstPass.systemPrompt,
+			appendSystemPrompt: firstPass.appendSystemPrompt,
+		};
+		const gatewaySessionRoot = join(agentDir, "gateway-sessions");
 		const daemonOptions: DaemonModeOptions = {
 			initialMessage,
 			initialImages,
 			messages: parsed.messages,
+			gateway: settingsManager.getGatewaySettings(),
+			createSession: async (sessionKey) => {
+				const gatewayResourceLoader = new DefaultResourceLoader({
+					cwd,
+					agentDir,
+					settingsManager,
+					...gatewayLoaderOptions,
+				});
+				await gatewayResourceLoader.reload();
+				const gatewaySessionOptions: CreateAgentSessionOptions = {
+					...sessionOptions,
+					authStorage,
+					modelRegistry,
+					settingsManager,
+					resourceLoader: gatewayResourceLoader,
+					sessionManager: createGatewaySessionManager(cwd, sessionKey, gatewaySessionRoot),
+				};
+				const { session: gatewaySession } = await createAgentSession(gatewaySessionOptions);
+				return gatewaySession;
+			},
 		};
 		await runDaemonMode(session, daemonOptions);
 	} else {

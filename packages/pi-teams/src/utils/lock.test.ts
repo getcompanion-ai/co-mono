@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withLock } from "./lock";
 
 describe("withLock", () => {
-	const testDir = path.join(os.tmpdir(), "pi-lock-test-" + Date.now());
+	const testDir = path.join(os.tmpdir(), `pi-lock-test-${Date.now()}`);
 	const lockPath = path.join(testDir, "test");
 	const lockFile = `${lockPath}.lock`;
 

@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { inboxPath, sanitizeName, teamDir } from "./paths";
 
@@ -17,7 +14,6 @@ describe("Security Audit - Path Traversal (Prevention Check)", () => {
 	});
 
 	it("should throw an error for path traversal via taskId", () => {
-		const teamName = "audit-team";
 		const maliciousTaskId = "../../../etc/passwd";
 		// We need to import readTask/updateTask or just sanitizeName directly if we want to test the logic
 		// But since we already tested sanitizeName via other paths, this is just for completeness.
