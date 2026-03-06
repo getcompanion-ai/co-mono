@@ -95,12 +95,58 @@ export function createVercelStreamListener(
 							id: `text_${inner.contentIndex}`,
 						});
 						return;
+					case "toolcall_start": {
+						const content = inner.partial.content[inner.contentIndex];
+						if (content?.type === "toolCall") {
+							writeChunk(response, {
+								type: "tool-input-start",
+								toolCallId: content.id,
+								toolName: content.name,
+							});
+						}
+						return;
+					}
+					case "toolcall_delta": {
+						const content = inner.partial.content[inner.contentIndex];
+						if (content?.type === "toolCall") {
+							writeChunk(response, {
+								type: "tool-input-delta",
+								toolCallId: content.id,
+								inputTextDelta: inner.delta,
+							});
+						}
+						return;
+					}
+					case "toolcall_end":
+						writeChunk(response, {
+							type: "tool-input-available",
+							toolCallId: inner.toolCall.id,
+							toolName: inner.toolCall.name,
+							input: inner.toolCall.arguments,
+						});
+						return;
 				}
 				return;
 			}
 
 			case "turn_end":
 				writeChunk(response, { type: "finish-step" });
+				return;
+
+			case "tool_execution_end":
+				if (event.isError) {
+					writeChunk(response, {
+						type: "tool-output-error",
+						toolCallId: event.toolCallId,
+						errorText: typeof event.result === "string" ? event.result : JSON.stringify(event.result),
+					});
+				} else {
+					writeChunk(response, {
+						type: "tool-output-available",
+						toolCallId: event.toolCallId,
+						output: typeof event.result === "string" ? event.result : JSON.stringify(event.result),
+					});
+				}
 				return;
 		}
 	};
