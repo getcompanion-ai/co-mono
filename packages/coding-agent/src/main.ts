@@ -752,6 +752,8 @@ export async function main(args: string[]) {
 		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
 	}
 
+	const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
+
 	if (isGatewayCommand) {
 		const gatewayLoaderOptions = {
 			additionalExtensionPaths: firstPass.extensions,
@@ -906,7 +908,6 @@ export async function main(args: string[]) {
 
 	// Clamp thinking level to model capabilities for CLI-provided thinking levels.
 	// This covers both --thinking <level> and --model <pattern>:<thinking>.
-	const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 	if (session.model && cliThinkingOverride) {
 		let effectiveThinking = session.thinkingLevel;
 		if (!session.model.reasoning) {
