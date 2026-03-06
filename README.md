@@ -54,7 +54,7 @@ This installer:
 - writes `~/.local/bin/pi` launcher,
 - populates `~/.pi/agent/settings.json` with package list,
 - installs packages (if `npm` is available),
-- and can install a user systemd service for `pi daemon` so it stays alive.
+- and can install a user service for `pi daemon` so it stays alive (`systemd` on Linux, `launchd` on macOS).
 
 Preinstalled package sources are:
 
@@ -126,6 +126,8 @@ Then enable:
 systemctl --user daemon-reload
 systemctl --user enable --now pi
 ```
+
+On macOS, `public-install.sh --daemon --start` now provisions a per-user `launchd` agent automatically.
 
 Optional:
 
