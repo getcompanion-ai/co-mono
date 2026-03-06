@@ -4,6 +4,7 @@ import { URL } from "node:url";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "./agent-session.js";
 import { SessionManager } from "./session-manager.js";
+import { createVercelStreamListener, errorVercelStream, extractUserText, finishVercelStream } from "./vercel-ai-stream.js";
 
 export interface GatewayConfig {
 	bind: string;
@@ -491,7 +492,7 @@ export class GatewayRuntime {
 			return;
 		}
 
-		const sessionMatch = path.match(/^\/sessions\/([^/]+)(?:\/(events|messages|abort|reset))?$/);
+		const sessionMatch = path.match(/^\/sessions\/([^/]+)(?:\/(events|messages|abort|reset|chat))?$/);
 		if (!sessionMatch) {
 			this.writeJson(response, 404, { error: "Not found" });
 			return;
@@ -508,6 +509,11 @@ export class GatewayRuntime {
 
 		if (action === "events" && method === "GET") {
 			await this.handleSse(sessionKey, request, response);
+			return;
+		}
+
+		if (action === "chat" && method === "POST") {
+			await this.handleChat(sessionKey, request, response);
 			return;
 		}
 
@@ -585,6 +591,63 @@ export class GatewayRuntime {
 		request.on("close", () => {
 			unsubscribe();
 		});
+	}
+
+	private async handleChat(
+		sessionKey: string,
+		request: IncomingMessage,
+		response: ServerResponse,
+	): Promise<void> {
+		const body = await this.readJsonBody(request);
+		const text = extractUserText(body);
+		if (!text) {
+			this.writeJson(response, 400, { error: "Missing user message text" });
+			return;
+		}
+
+		// Set up SSE response headers
+		response.writeHead(200, {
+			"Content-Type": "text/event-stream",
+			"Cache-Control": "no-cache, no-transform",
+			Connection: "keep-alive",
+			"x-vercel-ai-ui-message-stream": "v1",
+		});
+		response.write("\n");
+
+		// Subscribe to session events for Vercel AI SDK translation
+		const managedSession = await this.ensureSession(sessionKey);
+		const listener = createVercelStreamListener(response);
+		const unsubscribe = managedSession.session.subscribe(listener);
+
+		// Clean up on client disconnect
+		let clientDisconnected = false;
+		request.on("close", () => {
+			clientDisconnected = true;
+			unsubscribe();
+		});
+
+		// Drive the session through the existing queue infrastructure
+		try {
+			const result = await this.enqueueMessage({
+				sessionKey,
+				text,
+				source: "extension",
+			});
+			if (!clientDisconnected) {
+				unsubscribe();
+				if (result.ok) {
+					finishVercelStream(response, "stop");
+				} else {
+					errorVercelStream(response, result.error ?? "Unknown error");
+				}
+			}
+		} catch (error) {
+			if (!clientDisconnected) {
+				unsubscribe();
+				const message = error instanceof Error ? error.message : String(error);
+				errorVercelStream(response, message);
+			}
+		}
 	}
 
 	private requireAuth(request: IncomingMessage, response: ServerResponse): void {
