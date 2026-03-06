@@ -86,7 +86,7 @@ describe("createVercelStreamListener", () => {
 
 	it("translates text streaming events", () => {
 		const response = createMockResponse();
-		const listener = createVercelStreamListener(response);
+		const listener = createVercelStreamListener(response, "test-msg-id");
 
 		listener({ type: "agent_start" } as AgentSessionEvent);
 		listener({ type: "turn_start", turnIndex: 0, timestamp: Date.now() } as AgentSessionEvent);
@@ -109,7 +109,7 @@ describe("createVercelStreamListener", () => {
 
 		const parsed = parseChunks(response.chunks);
 		expect(parsed).toEqual([
-			{ type: "start" },
+			{ type: "start", messageId: "test-msg-id" },
 			{ type: "start-step" },
 			{ type: "text-start", id: "text_0" },
 			{ type: "text-delta", id: "text_0", delta: "hello" },
@@ -120,13 +120,13 @@ describe("createVercelStreamListener", () => {
 
 	it("does not write after response has ended", () => {
 		const response = createMockResponse();
-		const listener = createVercelStreamListener(response);
+		const listener = createVercelStreamListener(response, "test-msg-id");
 
 		listener({ type: "agent_start" } as AgentSessionEvent);
 		response.end();
 		listener({ type: "turn_start", turnIndex: 0, timestamp: Date.now() } as AgentSessionEvent);
 
 		const parsed = parseChunks(response.chunks);
-		expect(parsed).toEqual([{ type: "start" }]);
+		expect(parsed).toEqual([{ type: "start", messageId: "test-msg-id" }]);
 	});
 });

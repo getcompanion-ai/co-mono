@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import type { AgentSessionEvent } from "./agent-session.js";
 
@@ -55,8 +56,10 @@ export function extractUserText(body: Record<string, unknown>): string | null {
  */
 export function createVercelStreamListener(
 	response: ServerResponse,
+	messageId?: string,
 ): (event: AgentSessionEvent) => void {
 	let started = false;
+	const msgId = messageId ?? randomUUID();
 
 	return (event: AgentSessionEvent) => {
 		if (response.writableEnded) return;
@@ -64,7 +67,7 @@ export function createVercelStreamListener(
 		switch (event.type) {
 			case "agent_start":
 				if (!started) {
-					writeChunk(response, { type: "start" });
+					writeChunk(response, { type: "start", messageId: msgId });
 					started = true;
 				}
 				return;
@@ -153,19 +156,11 @@ export function createVercelStreamListener(
 				return;
 
 			case "tool_execution_end":
-				if (event.isError) {
-					writeChunk(response, {
-						type: "tool-output-error",
-						toolCallId: event.toolCallId,
-						errorText: typeof event.result === "string" ? event.result : JSON.stringify(event.result),
-					});
-				} else {
-					writeChunk(response, {
-						type: "tool-output-available",
-						toolCallId: event.toolCallId,
-						output: typeof event.result === "string" ? event.result : JSON.stringify(event.result),
-					});
-				}
+				writeChunk(response, {
+					type: "tool-output-available",
+					toolCallId: event.toolCallId,
+					output: event.result,
+				});
 				return;
 		}
 	};
