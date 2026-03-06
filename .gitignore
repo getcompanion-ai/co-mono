@@ -33,6 +33,10 @@ pi-*.html
 out.html
 packages/coding-agent/binaries/
 todo.md
+<<<<<<< Updated upstream
 
 # Riptide artifacts (cloud-synced)
 .humanlayer/tasks/
+=======
+.humanlayer
+>>>>>>> Stashed changes
