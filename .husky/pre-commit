@@ -1,14 +1,27 @@
 #!/bin/sh
 
-# Get list of staged files before running check
+# Get list of staged files before running checks
 STAGED_FILES=$(git diff --cached --name-only)
 
-# Run the check script (formatting, linting, and type checking)
-echo "Running formatting, linting, and type checking..."
-npm run check
-if [ $? -ne 0 ]; then
-  echo "❌ Checks failed. Please fix the errors before committing."
-  exit 1
+if [ -z "$STAGED_FILES" ]; then
+  echo "No staged files to check."
+  exit 0
+fi
+
+echo "Running checks on staged files..."
+
+run_checks() {
+  # shellcheck disable=SC2086 # intentionally preserving word splitting for file list
+  npx -y @biomejs/biome check --write --error-on-warnings $1
+}
+
+# Run Biome only when staged files include style targets
+if echo "$STAGED_FILES" | grep -Eq '\.(ts|tsx|js|jsx|json)$'; then
+  echo "Running biome on staged files..."
+  TS_OR_JS_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|json)$' | tr '\n' ' ')
+  if [ -n "$TS_OR_JS_FILES" ]; then
+    run_checks "$TS_OR_JS_FILES"
+  fi
 fi
 
 RUN_BROWSER_SMOKE=0

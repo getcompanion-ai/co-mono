@@ -67,6 +67,12 @@ Preinstalled package sources are:
 
 If `npm` is available, it also tries to install these packages during install.
 
+If a release has not been published yet, the installer can fallback to a source checkout automatically. Set this explicitly with:
+
+```bash
+CO_MONO_FALLBACK_TO_SOURCE=1 curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash
+```
+
 ### Keep it running
 
 Start and keep `co-mono` alive with your process supervisor of choice (systemd, launchd, supervisor, Docker, etc).

@@ -10,6 +10,7 @@ AGENT_DIR="${CO_MONO_AGENT_DIR:-$INSTALL_DIR/agent}"
 RUN_INSTALL_PACKAGES="${CO_MONO_INSTALL_PACKAGES:-1}"
 SKIP_REINSTALL="${CO_MONO_SKIP_REINSTALL:-0}"
 INSTALL_RUNTIME_DAEMON="${CO_MONO_INSTALL_RUNTIME_DAEMON:-0}"
+FALLBACK_TO_SOURCE="${CO_MONO_FALLBACK_TO_SOURCE:-1}"
 
 DEFAULT_PACKAGES=(
   "npm:@e9n/pi-channels"
@@ -100,7 +101,10 @@ resolve_release_tag() {
 
   local api_json
   api_json="$(mktemp)"
-  download_json "https://api.github.com/repos/${REPO}/releases/latest" "$api_json"
+  if ! download_json "https://api.github.com/repos/${REPO}/releases/latest" "$api_json"; then
+    rm -f "$api_json"
+    return 1
+  fi
   TAG="$(awk -F '"tag_name": "' 'index($0, "\"tag_name\"") { split($2, a, "\""); print a[1] }' "$api_json" | head -n 1)"
   rm -f "$api_json"
 
@@ -109,6 +113,75 @@ resolve_release_tag() {
   fi
 
   echo "$TAG"
+}
+
+bootstrap_from_source() {
+  local source_dir="$INSTALL_DIR/source"
+  local ref="$1"
+
+  if ! command -v node >/dev/null 2>&1; then
+    fail "Node.js is required for source fallback. Install nodejs first."
+  fi
+
+  if ! command -v npm >/dev/null 2>&1; then
+    fail "npm is required for source fallback. Install npm first."
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    fail "git is required for source fallback."
+  fi
+
+  mkdir -p "$INSTALL_DIR"
+  if [[ -d "$source_dir" && "${SKIP_REINSTALL}" != "1" ]]; then
+    rm -rf "$source_dir"
+  fi
+
+  if [[ ! -d "$source_dir" ]]; then
+    log "Cloning ${REPO} (${ref})"
+    git clone --depth 1 --branch "$ref" "https://github.com/${REPO}.git" "$source_dir"
+  else
+    log "Updating existing source checkout at $source_dir"
+    git -C "$source_dir" fetch --depth 1 origin "$ref"
+    git -C "$source_dir" checkout "$ref"
+    git -C "$source_dir" pull --ff-only origin "$ref"
+  fi
+
+  log "Running local install for source checkout"
+  (
+    cd "$source_dir"
+    CO_MONO_AGENT_DIR="$AGENT_DIR" \
+    PI_CODING_AGENT_DIR="$AGENT_DIR" \
+      ./install.sh
+  )
+
+  if [[ ! -x "$source_dir/co-mono" ]]; then
+    fail "co-mono source launcher was not created in fallback checkout."
+  fi
+
+  write_source_launcher "$source_dir"
+  export CO_MONO_BIN_PATH="$source_dir/co-mono"
+  maybe_install_packages
+  print_next_steps_source
+}
+
+write_source_launcher() {
+  local source_dir="$1"
+  mkdir -p "$BIN_DIR"
+  local launcher="$BIN_DIR/co-mono"
+  cat > "$launcher" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$source_dir"
+AGENT_DIR="$AGENT_DIR"
+
+export CO_MONO_AGENT_DIR="${AGENT_DIR}"
+export PI_CODING_AGENT_DIR="${AGENT_DIR}"
+
+cd "\$ROOT_DIR"
+exec "\$ROOT_DIR/co-mono" "\$@"
+EOF
+  chmod +x "$launcher"
 }
 
 platform_asset() {
@@ -206,9 +279,35 @@ print_next_steps() {
   echo
 }
 
+print_next_steps_source() {
+  echo
+  log "Installed co-mono from source checkout: $INSTALL_DIR/source"
+  log "Launcher created: $BIN_DIR/co-mono"
+  echo
+  echo "Add to PATH if needed:"
+  echo "  export PATH=\"$BIN_DIR:$PATH\""
+  echo
+  echo "Run:"
+  echo "  co-mono"
+  echo
+  echo "Source fallback mode uses node/npm and local scripts."
+  echo
+}
+
 main() {
   detect_platform
-  TAG="$(resolve_release_tag)"
+  if ! TAG="$(resolve_release_tag)"; then
+    if [[ "$FALLBACK_TO_SOURCE" == "1" ]]; then
+      log "No release found in GitHub. Falling back to source install."
+      bootstrap_from_source "main"
+      return
+    fi
+    fail "could not determine latest release tag from GitHub API. Set CO_MONO_FALLBACK_TO_SOURCE=1 to fallback to source."
+  fi
+
+  if [[ -z "$TAG" ]]; then
+    fail "resolved release tag was empty."
+  fi
 
   local asset
   local url
@@ -223,7 +322,14 @@ main() {
 
   archive="$workdir/$asset"
   log "Downloading ${REPO} ${TAG} (${PLATFORM})"
-  download_json "$url" "$archive"
+  if ! download_json "$url" "$archive"; then
+    if [[ "$FALLBACK_TO_SOURCE" == "1" ]]; then
+      log "Release asset not available for ${TAG} (${PLATFORM}). Falling back to source."
+      bootstrap_from_source "${TAG}"
+      return
+    fi
+    fail "release asset not found: $url"
+  fi
 
   log "Extracting archive"
   extract_archive "$archive" "$workdir"
