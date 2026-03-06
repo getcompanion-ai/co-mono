@@ -441,6 +441,7 @@ pi config                   # Enable/disable package resources
 |------|-------------|
 | (default) | Interactive mode |
 | `-p`, `--print` | Print response and exit |
+| `daemon` | Start a long-lived, non-interactive daemon that keeps extensions running |
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
 | `--export <in> [out]` | Export session to HTML |

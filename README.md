@@ -39,21 +39,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.m
 
 ### Public (binary)
 
-Use this for users on production machines where you don't want to expose source:
+Use this for users on production machines where you don't want to expose source.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash
 ```
 
-Then run:
+Install everything and keep it always-on (recommended for new devices):
 
 ```bash
-co-mono
+curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash -s -- --daemon --start
 ```
 
-The installer downloads the latest release archive, writes a launcher to
-`~/.local/bin/co-mono`, and creates a private agent settings directory at
-`~/.co-mono/agent/settings.json` with remote packages.
+This installer:
+- Downloads the latest release (or falls back to source when needed),
+- writes `~/.local/bin/co-mono` launcher,
+- populates `~/.co-mono/agent/settings.json` with package list,
+- installs packages (if `npm` is available),
+- and can install a user systemd service for `co-mono daemon` so it stays alive.
 
 Preinstalled package sources are:
 
@@ -65,41 +68,19 @@ Preinstalled package sources are:
 ]
 ```
 
-If `npm` is available, it also tries to install these packages during install.
+If `npm` is available, it also installs these packages during install.
 
-If a release has not been published yet, the installer can fallback to a source checkout automatically. Set this explicitly with:
+If no release asset is found, the installer falls back to source.
 
 ```bash
-CO_MONO_FALLBACK_TO_SOURCE=1 curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash
+CO_MONO_FALLBACK_TO_SOURCE=0 \
+  curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash -s -- --daemon --start
 ```
 
-### Keep it running
-
-Start and keep `co-mono` alive with your process supervisor of choice (systemd, launchd, supervisor, Docker, etc).
-
-For public installs, a minimal systemd user service is:
+`public-install.sh` options:
 
 ```bash
-mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/co-mono.service <<'EOF'
-[Unit]
-Description=co-mono
-After=network-online.target
-
-[Service]
-Type=simple
-Environment=PI_CODING_AGENT_DIR=%h/.co-mono/agent
-Environment=CO_MONO_AGENT_DIR=%h/.co-mono/agent
-ExecStart=%h/.local/bin/co-mono
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-EOF
-
-systemctl --user daemon-reload
-systemctl --user enable --now co-mono
+curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash -s -- --help
 ```
 
 ### Local (source)
@@ -116,11 +97,10 @@ Run:
 ./co-mono
 ```
 
-Run with built-in runtime watchdog:
+Run in background with extensions active:
 
 ```bash
-CO_MONO_RUNTIME_COMMAND="python -m http.server 8765" \
-  ./co-mono --with-runtime-daemon
+./co-mono daemon
 ```
 
 For a user systemd setup, create `~/.config/systemd/user/co-mono.service` with:
@@ -134,7 +114,7 @@ After=network-online.target
 Type=simple
 Environment=PI_CODING_AGENT_DIR=%h/.co-mono/agent
 Environment=CO_MONO_AGENT_DIR=%h/.co-mono/agent
-ExecStart=/absolute/path/to/repo/co-mono --with-runtime-daemon
+ExecStart=/absolute/path/to/repo/co-mono daemon
 Restart=always
 RestartSec=5
 
