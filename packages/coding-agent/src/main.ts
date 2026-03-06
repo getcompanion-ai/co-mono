@@ -28,7 +28,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { type DaemonModeOptions, InteractiveMode, runDaemonMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 
 /**
@@ -77,6 +77,19 @@ interface PackageCommandOptions {
 	local: boolean;
 	help: boolean;
 	invalidOption?: string;
+}
+
+function printDaemonHelp(): void {
+	console.log(`${chalk.bold("Usage:")}
+  ${APP_NAME} daemon [options] [messages...]
+
+Run pi as a long-lived daemon (non-interactive) with extensions enabled.
+Messages passed as positional args are sent once at startup.
+
+Options:
+  --list-models [search]  List available models and exit
+  --help, -h              Show this help
+`);
 }
 
 function getPackageCommandUsage(command: PackageCommand): string {
@@ -540,6 +553,8 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 }
 
 export async function main(args: string[]) {
+	const isDaemonCommand = args[0] === "daemon";
+	const parsedArgs = isDaemonCommand ? args.slice(1) : args;
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
 		process.env.PI_OFFLINE = "1";
@@ -558,7 +573,7 @@ export async function main(args: string[]) {
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 
 	// First pass: parse args to get --extension paths
-	const firstPass = parseArgs(args);
+	const firstPass = parseArgs(parsedArgs);
 
 	// Early load extensions to discover their CLI flags
 	const cwd = process.cwd();
@@ -606,7 +621,7 @@ export async function main(args: string[]) {
 	}
 
 	// Second pass: parse args with extension flags
-	const parsed = parseArgs(args, extensionFlags);
+	const parsed = parseArgs(parsedArgs, extensionFlags);
 
 	// Pass flag values to extensions via runtime
 	for (const [name, value] of parsed.unknownFlags) {
@@ -619,7 +634,11 @@ export async function main(args: string[]) {
 	}
 
 	if (parsed.help) {
-		printHelp();
+		if (isDaemonCommand) {
+			printDaemonHelp();
+		} else {
+			printHelp();
+		}
 		process.exit(0);
 	}
 
@@ -629,8 +648,13 @@ export async function main(args: string[]) {
 		process.exit(0);
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
-	if (parsed.mode !== "rpc") {
+	if (isDaemonCommand && parsed.mode === "rpc") {
+		console.error(chalk.red("Cannot use --mode rpc with the daemon command."));
+		process.exit(1);
+	}
+
+	// Read piped stdin content (if any) - skip for daemon and RPC modes
+	if (!isDaemonCommand && parsed.mode !== "rpc") {
 		const stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined) {
 			// Force print mode since interactive mode requires a TTY for keyboard input
@@ -660,7 +684,7 @@ export async function main(args: string[]) {
 	}
 
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
-	const isInteractive = !parsed.print && parsed.mode === undefined;
+	const isInteractive = !isDaemonCommand && !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 	initTheme(settingsManager.getTheme(), isInteractive);
 
@@ -765,6 +789,13 @@ export async function main(args: string[]) {
 			verbose: parsed.verbose,
 		});
 		await mode.run();
+	} else if (isDaemonCommand) {
+		const daemonOptions: DaemonModeOptions = {
+			initialMessage,
+			initialImages,
+			messages: parsed.messages,
+		};
+		await runDaemonMode(session, daemonOptions);
 	} else {
 		await runPrintMode(session, {
 			mode,
