@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { join } from "node:path";
 import { URL } from "node:url";
 import type { ImageContent } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AgentSession, AgentSessionEvent } from "./agent-session.js";
 import { SessionManager } from "./session-manager.js";
 import {
@@ -51,6 +52,35 @@ export interface GatewaySessionSnapshot {
 	processing: boolean;
 	lastActiveAt: number;
 	createdAt: number;
+	name?: string;
+	lastMessagePreview?: string;
+	updatedAt: number;
+}
+
+export interface ModelInfo {
+	provider: string;
+	modelId: string;
+	displayName: string;
+	capabilities?: string[];
+}
+
+export interface HistoryMessage {
+	id: string;
+	role: "user" | "assistant" | "toolResult";
+	parts: HistoryPart[];
+	timestamp: number;
+}
+
+export type HistoryPart =
+	| { type: "text"; text: string }
+	| { type: "reasoning"; text: string }
+	| { type: "tool-invocation"; toolCallId: string; toolName: string; args: unknown; state: string; result?: unknown };
+
+export interface ChannelStatus {
+	id: string;
+	name: string;
+	connected: boolean;
+	error?: string;
 }
 
 export interface GatewayRuntimeOptions {
@@ -122,13 +152,22 @@ export class GatewayRuntime {
 	private server: Server | null = null;
 	private idleSweepTimer: NodeJS.Timeout | null = null;
 	private ready = false;
+	private logBuffer: string[] = [];
+	private readonly maxLogBuffer = 1000;
 
 	constructor(options: GatewayRuntimeOptions) {
 		this.config = options.config;
 		this.primarySessionKey = options.primarySessionKey;
 		this.primarySession = options.primarySession;
 		this.createSession = options.createSession;
-		this.log = options.log ?? (() => {});
+		const originalLog = options.log;
+		this.log = (msg: string) => {
+			this.logBuffer.push(msg);
+			if (this.logBuffer.length > this.maxLogBuffer) {
+				this.logBuffer = this.logBuffer.slice(-this.maxLogBuffer);
+			}
+			originalLog?.(msg);
+		};
 		this.sessionDirRoot = join(options.primarySession.sessionManager.getSessionDir(), "..", "gateway-sessions");
 	}
 
@@ -443,14 +482,40 @@ export class GatewayRuntime {
 	}
 
 	private createSnapshot(managedSession: ManagedGatewaySession): GatewaySessionSnapshot {
+		const messages = managedSession.session.messages;
+		let lastMessagePreview: string | undefined;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "user" || msg.role === "assistant") {
+				const content = (msg as { content: unknown }).content;
+				if (typeof content === "string" && content.length > 0) {
+					lastMessagePreview = content.slice(0, 120);
+					break;
+				}
+				if (Array.isArray(content)) {
+					for (const part of content) {
+						if (typeof part === "object" && part !== null && (part as { type: string }).type === "text") {
+							const text = (part as { text: string }).text;
+							if (text.length > 0) {
+								lastMessagePreview = text.slice(0, 120);
+								break;
+							}
+						}
+					}
+					if (lastMessagePreview) break;
+				}
+			}
+		}
 		return {
 			sessionKey: managedSession.sessionKey,
 			sessionId: managedSession.session.sessionId,
-			messageCount: managedSession.session.messages.length,
+			messageCount: messages.length,
 			queueDepth: managedSession.queue.length,
 			processing: managedSession.processing,
 			lastActiveAt: managedSession.lastActiveAt,
 			createdAt: managedSession.createdAt,
+			updatedAt: managedSession.lastActiveAt,
+			lastMessagePreview,
 		};
 	}
 
@@ -509,7 +574,38 @@ export class GatewayRuntime {
 			return;
 		}
 
-		const sessionMatch = path.match(/^\/sessions\/([^/]+)(?:\/(events|messages|abort|reset|chat))?$/);
+		if (method === "GET" && path === "/models") {
+			const models = await this.handleGetModels();
+			this.writeJson(response, 200, models);
+			return;
+		}
+
+		if (method === "GET" && path === "/config") {
+			const config = this.getPublicConfig();
+			this.writeJson(response, 200, config);
+			return;
+		}
+
+		if (method === "POST" && path === "/config") {
+			const body = await this.readJsonBody(request);
+			await this.handlePatchConfig(body);
+			this.writeJson(response, 200, { ok: true });
+			return;
+		}
+
+		if (method === "GET" && path === "/channels/status") {
+			const status = this.handleGetChannelsStatus();
+			this.writeJson(response, 200, { channels: status });
+			return;
+		}
+
+		if (method === "GET" && path === "/logs") {
+			const logs = this.handleGetLogs();
+			this.writeJson(response, 200, { logs });
+			return;
+		}
+
+		const sessionMatch = path.match(/^\/sessions\/([^/]+)(?:\/(events|messages|abort|reset|chat|history|model|reload))?$/);
 		if (!sessionMatch) {
 			this.writeJson(response, 404, { error: "Not found" });
 			return;
@@ -521,6 +617,19 @@ export class GatewayRuntime {
 		if (!action && method === "GET") {
 			const session = await this.ensureSession(sessionKey);
 			this.writeJson(response, 200, { session: this.createSnapshot(session) });
+			return;
+		}
+
+		if (!action && method === "PATCH") {
+			const body = await this.readJsonBody(request);
+			await this.handlePatchSession(sessionKey, body as { name?: string });
+			this.writeJson(response, 200, { ok: true });
+			return;
+		}
+
+		if (!action && method === "DELETE") {
+			await this.handleDeleteSession(sessionKey);
+			this.writeJson(response, 200, { ok: true });
 			return;
 		}
 
@@ -557,6 +666,28 @@ export class GatewayRuntime {
 
 		if (action === "reset" && method === "POST") {
 			await this.resetSession(sessionKey);
+			this.writeJson(response, 200, { ok: true });
+			return;
+		}
+
+		if (action === "history" && method === "GET") {
+			const limitParam = url.searchParams.get("limit");
+			const messages = this.handleGetHistory(sessionKey, limitParam ? parseInt(limitParam, 10) : undefined);
+			this.writeJson(response, 200, { messages });
+			return;
+		}
+
+		if (action === "model" && method === "POST") {
+			const body = await this.readJsonBody(request);
+			const provider = typeof body.provider === "string" ? body.provider : "";
+			const modelId = typeof body.modelId === "string" ? body.modelId : "";
+			const result = await this.handleSetModel(sessionKey, provider, modelId);
+			this.writeJson(response, 200, result);
+			return;
+		}
+
+		if (action === "reload" && method === "POST") {
+			await this.handleReloadSession(sessionKey);
 			this.writeJson(response, 200, { ok: true });
 			return;
 		}
@@ -712,6 +843,183 @@ export class GatewayRuntime {
 		response.statusCode = statusCode;
 		response.setHeader("content-type", "application/json; charset=utf-8");
 		response.end(JSON.stringify(payload));
+	}
+
+	// ---------------------------------------------------------------------------
+	// New handler methods added for companion-cloud web app integration
+	// ---------------------------------------------------------------------------
+
+	private async handleGetModels(): Promise<{ models: ModelInfo[]; current: { provider: string; modelId: string } | null }> {
+		const available = this.primarySession.modelRegistry.getAvailable();
+		const models: ModelInfo[] = available.map((m) => ({
+			provider: m.provider,
+			modelId: m.id,
+			displayName: m.name,
+			capabilities: [
+				...(m.reasoning ? ["reasoning"] : []),
+				...(m.input.includes("image") ? ["vision"] : []),
+			],
+		}));
+		const currentModel = this.primarySession.model;
+		const current = currentModel ? { provider: currentModel.provider, modelId: currentModel.id } : null;
+		return { models, current };
+	}
+
+	private async handleSetModel(
+		sessionKey: string,
+		provider: string,
+		modelId: string,
+	): Promise<{ ok: true; model: { provider: string; modelId: string } }> {
+		const managed = this.sessions.get(sessionKey);
+		if (!managed) {
+			throw new Error(`Session not found: ${sessionKey}`);
+		}
+		const found = managed.session.modelRegistry.find(provider, modelId);
+		if (!found) {
+			throw new Error(`Model not found: ${provider}/${modelId}`);
+		}
+		await managed.session.setModel(found);
+		return { ok: true, model: { provider, modelId } };
+	}
+
+	private handleGetHistory(sessionKey: string, limit?: number): HistoryMessage[] {
+		const managed = this.sessions.get(sessionKey);
+		if (!managed) {
+			return [];
+		}
+		const rawMessages = managed.session.messages;
+		const messages: HistoryMessage[] = [];
+		for (const msg of rawMessages) {
+			if (msg.role !== "user" && msg.role !== "assistant" && msg.role !== "toolResult") {
+				continue;
+			}
+			messages.push({
+				id: `${msg.timestamp}-${msg.role}`,
+				role: msg.role,
+				parts: this.messageContentToParts(msg),
+				timestamp: msg.timestamp,
+			});
+		}
+		return limit ? messages.slice(-limit) : messages;
+	}
+
+	private async handlePatchSession(sessionKey: string, patch: { name?: string }): Promise<void> {
+		const managed = this.sessions.get(sessionKey);
+		if (!managed) {
+			throw new Error(`Session not found: ${sessionKey}`);
+		}
+		if (patch.name !== undefined) {
+			// Labels in pi-mono are per-entry; we label the current leaf entry
+			const leafId = managed.session.sessionManager.getLeafId?.();
+			if (leafId) {
+				managed.session.sessionManager.appendLabelChange(leafId, patch.name);
+			}
+		}
+	}
+
+	private async handleDeleteSession(sessionKey: string): Promise<void> {
+		if (sessionKey === this.primarySessionKey) {
+			throw new Error("Cannot delete primary session");
+		}
+		const managed = this.sessions.get(sessionKey);
+		if (!managed) {
+			throw new Error(`Session not found: ${sessionKey}`);
+		}
+		managed.unsubscribe();
+		managed.session.dispose();
+		this.sessions.delete(sessionKey);
+	}
+
+	private getPublicConfig(): Record<string, unknown> {
+		const settings = this.primarySession.settingsManager.getGlobalSettings();
+		const { gateway, ...rest } = settings as Record<string, unknown> & { gateway?: Record<string, unknown> };
+		const { bearerToken: _bearerToken, ...safeGateway } = gateway ?? {};
+		return { ...rest, gateway: safeGateway };
+	}
+
+	private async handlePatchConfig(patch: Record<string, unknown>): Promise<void> {
+		// Apply overrides on top of current settings (in-memory only for daemon use)
+		this.primarySession.settingsManager.applyOverrides(patch as import("./settings-manager.js").Settings);
+	}
+
+	private handleGetChannelsStatus(): ChannelStatus[] {
+		// Extension channel status is not currently exposed as a public API on AgentSession.
+		// Return empty array as a safe default.
+		return [];
+	}
+
+	private handleGetLogs(): string[] {
+		return this.logBuffer.slice(-200);
+	}
+
+	private async handleReloadSession(sessionKey: string): Promise<void> {
+		const managed = this.sessions.get(sessionKey);
+		if (!managed) {
+			throw new Error(`Session not found: ${sessionKey}`);
+		}
+		// Reloading config by calling settingsManager.reload() on the session
+		managed.session.settingsManager.reload();
+	}
+
+	private messageContentToParts(msg: AgentMessage): HistoryPart[] {
+		if (msg.role === "user") {
+			const content = msg.content;
+			if (typeof content === "string") {
+				return [{ type: "text", text: content }];
+			}
+			if (Array.isArray(content)) {
+				return content
+					.filter((c): c is { type: "text"; text: string } => typeof c === "object" && c !== null && c.type === "text")
+					.map((c) => ({ type: "text" as const, text: c.text }));
+			}
+			return [];
+		}
+
+		if (msg.role === "assistant") {
+			const content = msg.content;
+			if (!Array.isArray(content)) return [];
+			const parts: HistoryPart[] = [];
+			for (const c of content) {
+				if (typeof c !== "object" || c === null) continue;
+				if (c.type === "text") {
+					parts.push({ type: "text", text: (c as { type: "text"; text: string }).text });
+				} else if (c.type === "thinking") {
+					parts.push({ type: "reasoning", text: (c as { type: "thinking"; thinking: string }).thinking });
+				} else if (c.type === "toolCall") {
+					const tc = c as { type: "toolCall"; id: string; name: string; arguments: unknown };
+					parts.push({
+						type: "tool-invocation",
+						toolCallId: tc.id,
+						toolName: tc.name,
+						args: tc.arguments,
+						state: "call",
+					});
+				}
+			}
+			return parts;
+		}
+
+		if (msg.role === "toolResult") {
+			const tr = msg as { role: "toolResult"; toolCallId: string; toolName: string; content: unknown; isError: boolean };
+			const textParts = Array.isArray(tr.content)
+				? (tr.content as { type: string; text?: string }[])
+						.filter((c) => c.type === "text" && typeof c.text === "string")
+						.map((c) => c.text as string)
+						.join("")
+				: "";
+			return [
+				{
+					type: "tool-invocation",
+					toolCallId: tr.toolCallId,
+					toolName: tr.toolName,
+					args: undefined,
+					state: tr.isError ? "error" : "result",
+					result: textParts,
+				},
+			];
+		}
+
+		return [];
 	}
 
 	getGatewaySessionDir(sessionKey: string): string {
