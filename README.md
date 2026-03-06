@@ -13,7 +13,7 @@
   <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
 </p>
 
-# Co-Mono
+# pi
 
 > **Looking for the pi coding agent?** See **[packages/coding-agent](packages/coding-agent)** for installation and usage.
 
@@ -53,10 +53,10 @@ curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public
 
 This installer:
 - Downloads the latest release (or falls back to source when needed),
-- writes `~/.local/bin/co-mono` launcher,
-- populates `~/.co-mono/agent/settings.json` with package list,
+- writes `~/.local/bin/pi` launcher,
+- populates `~/.pi/agent/settings.json` with package list,
 - installs packages (if `npm` is available),
-- and can install a user systemd service for `co-mono daemon` so it stays alive.
+- and can install a user systemd service for `pi gateway` so it stays alive.
 
 Preinstalled package sources are:
 
@@ -73,7 +73,7 @@ If `npm` is available, it also installs these packages during install.
 If no release asset is found, the installer falls back to source.
 
 ```bash
-CO_MONO_FALLBACK_TO_SOURCE=0 \
+PI_FALLBACK_TO_SOURCE=0 \
   curl -fsSL https://raw.githubusercontent.com/getcompanion-ai/co-mono/main/public-install.sh | bash -s -- --daemon --start
 ```
 
@@ -94,27 +94,26 @@ cd co-mono
 Run:
 
 ```bash
-./co-mono
+./pi
 ```
 
 Run in background with extensions active:
 
 ```bash
-./co-mono daemon
+./pi gateway
 ```
 
-For a user systemd setup, create `~/.config/systemd/user/co-mono.service` with:
+For a user systemd setup, create `~/.config/systemd/user/pi.service` with:
 
 ```ini
 [Unit]
-Description=co-mono
+Description=pi gateway
 After=network-online.target
 
 [Service]
 Type=simple
-Environment=PI_CODING_AGENT_DIR=%h/.co-mono/agent
-Environment=CO_MONO_AGENT_DIR=%h/.co-mono/agent
-ExecStart=/absolute/path/to/repo/co-mono daemon
+Environment=PI_CODING_AGENT_DIR=%h/.pi/agent
+ExecStart=/absolute/path/to/repo/pi gateway
 Restart=always
 RestartSec=5
 
@@ -126,7 +125,7 @@ Then enable:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now co-mono
+systemctl --user enable --now pi
 ```
 
 Optional:

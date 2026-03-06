@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Release script for co-mono
+ * Release script for pi
  *
  * Usage: node scripts/release.mjs <major|minor|patch>
  *

@@ -24,12 +24,12 @@ need npm
 
 cd "$ROOT_DIR"
 
-if [[ "${CO_MONO_SKIP_INSTALL:-0}" != "1" ]]; then
+if [[ "${PI_SKIP_INSTALL:-${CO_MONO_SKIP_INSTALL:-0}}" != "1" ]]; then
   log "Installing workspace dependencies"
   npm install
 fi
 
-if [[ "${CO_MONO_SKIP_BUILD:-0}" != "1" ]]; then
+if [[ "${PI_SKIP_BUILD:-${CO_MONO_SKIP_BUILD:-0}}" != "1" ]]; then
   log "Building core packages"
   BUILD_FAILED=0
   for pkg in packages/tui packages/ai packages/agent packages/coding-agent; do
@@ -46,7 +46,7 @@ if [[ "$BUILD_FAILED" == "1" ]] && [[ ! -f "$ROOT_DIR/packages/coding-agent/src/
 	fail "No usable coding-agent CLI source found for source launch fallback."
 fi
 
-LAUNCHER="$ROOT_DIR/co-mono"
+LAUNCHER="$ROOT_DIR/pi"
 cat > "$LAUNCHER" <<'EOF'
 #!/usr/bin/env bash
 
@@ -66,10 +66,10 @@ if [[ -x "$ROOT_DIR/node_modules/.bin/tsx" ]] && [[ -f "$ROOT_DIR/packages/codin
   exec "$ROOT_DIR/node_modules/.bin/tsx" "$ROOT_DIR/packages/coding-agent/src/cli.ts" "$@"
 fi
 
-echo "ERROR: no runnable co-mono binary found and tsx fallback is unavailable." >&2
+echo "ERROR: no runnable pi binary found and tsx fallback is unavailable." >&2
 exit 1
 EOF
 
 chmod +x "$LAUNCHER"
 log "Created launcher: $LAUNCHER"
-log "Run with: ./co-mono"
+log "Run with: ./pi"
