@@ -12,7 +12,22 @@ echo "Running checks on staged files..."
 
 run_checks() {
   # shellcheck disable=SC2086 # intentionally preserving word splitting for file list
-  npx -y @biomejs/biome check --write --error-on-warnings $1
+  CHECK_OUTPUT=""
+  CHECK_STATUS=0
+  set +e
+  CHECK_OUTPUT="$(npx -y @biomejs/biome check --write --error-on-warnings "$1" 2>&1)"
+  CHECK_STATUS=$?
+  set -e
+
+  if [ "$CHECK_STATUS" -ne 0 ]; then
+    if printf '%s\n' "$CHECK_OUTPUT" | grep -Fq "No files were processed in the specified paths."; then
+      return 0
+    fi
+    echo "$CHECK_OUTPUT"
+    return "$CHECK_STATUS"
+  fi
+
+  [ -n "$CHECK_OUTPUT" ] && echo "$CHECK_OUTPUT"
 }
 
 # Run Biome only when staged files include style targets
