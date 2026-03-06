@@ -627,7 +627,6 @@ export class GatewayRuntime {
 		});
 		response.write("\n");
 
-		const managedSession = await this.ensureSession(sessionKey);
 		const listener = createVercelStreamListener(response);
 		let unsubscribe: (() => void) | undefined;
 		let streamingActive = false;
@@ -648,6 +647,7 @@ export class GatewayRuntime {
 
 		// Drive the session through the existing queue infrastructure
 		try {
+			const managedSession = await this.ensureSession(sessionKey);
 			const result = await this.enqueueManagedMessage({
 				request: {
 					sessionKey,
