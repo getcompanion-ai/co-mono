@@ -6,7 +6,7 @@ import { appendMessage, broadcastMessage, readInbox, sendPlainMessage } from "./
 import * as paths from "./paths";
 
 // Mock the paths to use a temporary directory
-const testDir = path.join(os.tmpdir(), "pi-teams-test-" + Date.now());
+const testDir = path.join(os.tmpdir(), `pi-teams-test-${Date.now()}`);
 
 describe("Messaging Utilities", () => {
 	beforeEach(() => {
@@ -14,11 +14,11 @@ describe("Messaging Utilities", () => {
 		fs.mkdirSync(testDir, { recursive: true });
 
 		// Override paths to use testDir
-		vi.spyOn(paths, "inboxPath").mockImplementation((teamName, agentName) => {
+		vi.spyOn(paths, "inboxPath").mockImplementation((_teamName, agentName) => {
 			return path.join(testDir, "inboxes", `${agentName}.json`);
 		});
 		vi.spyOn(paths, "teamDir").mockReturnValue(testDir);
-		vi.spyOn(paths, "configPath").mockImplementation((teamName) => {
+		vi.spyOn(paths, "configPath").mockImplementation((_teamName) => {
 			return path.join(testDir, "config.json");
 		});
 	});

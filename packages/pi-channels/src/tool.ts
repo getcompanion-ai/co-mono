@@ -5,7 +5,7 @@
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { ChannelRegistry } from "./registry.ts";
+import type { ChannelRegistry } from "./registry.js";
 
 interface ChannelToolParams {
 	action: "send" | "list" | "test";

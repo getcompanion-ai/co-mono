@@ -39,7 +39,7 @@ describe("WezTermAdapter", () => {
 	describe("spawn", () => {
 		it("should spawn first pane to the right with 50%", () => {
 			// Mock getPanes finding only current pane
-			mockExecCommand.mockImplementation((bin, args) => {
+			mockExecCommand.mockImplementation((_bin: string, args: string[]) => {
 				if (args.includes("list")) {
 					return {
 						stdout: JSON.stringify([{ pane_id: 0, tab_id: 0 }]),
@@ -69,7 +69,7 @@ describe("WezTermAdapter", () => {
 
 		it("should spawn subsequent panes by splitting the sidebar", () => {
 			// Mock getPanes finding current pane (0) and sidebar pane (1)
-			mockExecCommand.mockImplementation((bin, args) => {
+			mockExecCommand.mockImplementation((_bin: string, args: string[]) => {
 				if (args.includes("list")) {
 					return {
 						stdout: JSON.stringify([

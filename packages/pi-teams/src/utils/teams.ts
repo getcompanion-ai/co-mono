@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { withLock } from "./lock";
 import type { Member, TeamConfig } from "./models";
 import { configPath, taskDir, teamDir } from "./paths";

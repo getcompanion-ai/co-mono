@@ -15,9 +15,9 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { ChatBridge } from "./bridge/bridge.ts";
-import type { ChannelRegistry } from "./registry.ts";
-import type { ChannelAdapter, ChannelMessage, IncomingMessage } from "./types.ts";
+import type { ChatBridge } from "./bridge/bridge.js";
+import type { ChannelRegistry } from "./registry.js";
+import type { ChannelAdapter, ChannelMessage, IncomingMessage } from "./types.js";
 
 /** Reference to the active bridge, set by index.ts after construction. */
 let activeBridge: ChatBridge | null = null;

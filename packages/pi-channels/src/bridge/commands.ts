@@ -7,7 +7,7 @@
  * Built-in: /start, /help, /abort, /status, /new
  */
 
-import type { SenderSession } from "../types.ts";
+import type { SenderSession } from "../types.js";
 
 export interface BotCommand {
 	name: string;

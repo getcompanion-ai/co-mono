@@ -8,6 +8,8 @@
 
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
+import { GatewayRuntime, type GatewaySessionFactory, setActiveGatewayRuntime } from "../core/gateway-runtime.js";
+import type { GatewaySettings } from "../core/settings-manager.js";
 
 /**
  * Options for daemon mode.
@@ -19,6 +21,10 @@ export interface DaemonModeOptions {
 	initialImages?: ImageContent[];
 	/** Additional startup messages (sent after initialMessage, one by one). */
 	messages?: string[];
+	/** Factory for creating additional gateway-owned sessions. */
+	createSession: GatewaySessionFactory;
+	/** Gateway config from settings/env. */
+	gateway: GatewaySettings;
 }
 
 function createCommandContextActions(session: AgentSession) {
@@ -71,12 +77,39 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 	const ready = new Promise<void>((resolve) => {
 		resolveReady = resolve;
 	});
+	const gatewayBind = process.env.PI_GATEWAY_BIND ?? options.gateway.bind ?? "127.0.0.1";
+	const gatewayPort = Number.parseInt(process.env.PI_GATEWAY_PORT ?? "", 10) || options.gateway.port || 8787;
+	const gatewayToken = process.env.PI_GATEWAY_TOKEN ?? options.gateway.bearerToken;
+	const gateway = new GatewayRuntime({
+		config: {
+			bind: gatewayBind,
+			port: gatewayPort,
+			bearerToken: gatewayToken,
+			session: {
+				idleMinutes: options.gateway.session?.idleMinutes ?? 60,
+				maxQueuePerSession: options.gateway.session?.maxQueuePerSession ?? 8,
+			},
+			webhook: {
+				enabled: options.gateway.webhook?.enabled ?? true,
+				basePath: options.gateway.webhook?.basePath ?? "/webhooks",
+				secret: process.env.PI_GATEWAY_WEBHOOK_SECRET ?? options.gateway.webhook?.secret,
+			},
+		},
+		primarySessionKey: "web:main",
+		primarySession: session,
+		createSession: options.createSession,
+		log: (message) => {
+			console.error(`[pi-gateway] ${message}`);
+		},
+	});
 
 	const shutdown = async (reason: "signal" | "extension"): Promise<void> => {
 		if (isShuttingDown) return;
 		isShuttingDown = true;
 
-		console.error(`[co-mono-daemon] shutdown requested: ${reason}`);
+		console.error(`[pi-gateway] shutdown requested: ${reason}`);
+		setActiveGatewayRuntime(null);
+		await gateway.stop();
 
 		const runner = session.extensionRunner;
 		if (runner?.hasHandlers("session_shutdown")) {
@@ -90,7 +123,7 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 	const handleShutdownSignal = (signal: NodeJS.Signals) => {
 		void shutdown("signal").catch((error) => {
 			console.error(
-				`[co-mono-daemon] shutdown failed for ${signal}: ${error instanceof Error ? error.message : String(error)}`,
+				`[pi-gateway] shutdown failed for ${signal}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			process.exit(1);
 		});
@@ -102,7 +135,7 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 	process.once("SIGHUP", () => handleShutdownSignal("SIGHUP"));
 
 	process.on("unhandledRejection", (error) => {
-		console.error(`[co-mono-daemon] unhandled rejection: ${error instanceof Error ? error.message : String(error)}`);
+		console.error(`[pi-gateway] unhandled rejection: ${error instanceof Error ? error.message : String(error)}`);
 	});
 
 	await session.bindExtensions({
@@ -110,7 +143,7 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 		shutdownHandler: () => {
 			void shutdown("extension").catch((error) => {
 				console.error(
-					`[co-mono-daemon] extension shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
+					`[pi-gateway] extension shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
 				);
 				process.exit(1);
 			});
@@ -135,7 +168,11 @@ export async function runDaemonMode(session: AgentSession, options: DaemonModeOp
 		await session.prompt(message);
 	}
 
-	console.error(`[co-mono-daemon] startup complete (session=${session.sessionId ?? "unknown"})`);
+	await gateway.start();
+	setActiveGatewayRuntime(gateway);
+	console.error(
+		`[pi-gateway] startup complete (session=${session.sessionId ?? "unknown"}, bind=${gatewayBind}, port=${gatewayPort})`,
+	);
 
 	// Keep process alive forever.
 	const keepAlive = setInterval(() => {

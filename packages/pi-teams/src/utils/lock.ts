@@ -1,8 +1,6 @@
 // Project: pi-teams
 import fs from "node:fs";
-import path from "node:path";
 
-const LOCK_TIMEOUT = 5000; // 5 seconds of retrying
 const STALE_LOCK_TIMEOUT = 30000; // 30 seconds for a lock to be considered stale
 
 export async function withLock<T>(lockPath: string, fn: () => Promise<T>, retries: number = 50): Promise<T> {
@@ -18,7 +16,7 @@ export async function withLock<T>(lockPath: string, fn: () => Promise<T>, retrie
 					// Attempt to remove stale lock
 					try {
 						fs.unlinkSync(lockFile);
-					} catch (e) {
+					} catch (_error) {
 						// ignore, another process might have already removed it
 					}
 				}
@@ -26,7 +24,7 @@ export async function withLock<T>(lockPath: string, fn: () => Promise<T>, retrie
 
 			fs.writeFileSync(lockFile, process.pid.toString(), { flag: "wx" });
 			break;
-		} catch (e) {
+		} catch (_error) {
 			retries--;
 			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
@@ -41,7 +39,7 @@ export async function withLock<T>(lockPath: string, fn: () => Promise<T>, retrie
 	} finally {
 		try {
 			fs.unlinkSync(lockFile);
-		} catch (e) {
+		} catch (_error) {
 			// ignore
 		}
 	}

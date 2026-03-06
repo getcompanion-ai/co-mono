@@ -10,7 +10,7 @@ import { teamExists } from "./teams";
 export function getTaskId(teamName: string): string {
 	const dir = taskDir(teamName);
 	const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
-	const ids = files.map((f) => parseInt(path.parse(f).name, 10)).filter((id) => !isNaN(id));
+	const ids = files.map((f) => parseInt(path.parse(f).name, 10)).filter((id) => !Number.isNaN(id));
 	return ids.length > 0 ? (Math.max(...ids) + 1).toString() : "1";
 }
 
@@ -169,7 +169,7 @@ export async function listTasks(teamName: string): Promise<TaskFile[]> {
 		const tasks: TaskFile[] = files
 			.map((f) => {
 				const id = parseInt(path.parse(f).name, 10);
-				if (isNaN(id)) return null;
+				if (Number.isNaN(id)) return null;
 				return JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8"));
 			})
 			.filter((t) => t !== null);

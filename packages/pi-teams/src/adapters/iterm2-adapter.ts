@@ -6,7 +6,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { execCommand, type SpawnOptions, type TerminalAdapter } from "../utils/terminal-adapter";
+import type { SpawnOptions, TerminalAdapter } from "../utils/terminal-adapter";
 
 /**
  * Context needed for iTerm2 spawning (tracks last pane for layout)

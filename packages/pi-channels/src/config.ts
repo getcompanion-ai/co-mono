@@ -29,7 +29,7 @@
  */
 
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
-import type { ChannelConfig } from "./types.ts";
+import type { ChannelConfig } from "./types.js";
 
 const SETTINGS_KEY = "pi-channels";
 

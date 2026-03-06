@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as paths from "./paths";
-import { createTask, listTasks } from "./tasks";
+import { createTask } from "./tasks";
 
-const testDir = path.join(os.tmpdir(), "pi-tasks-race-test-" + Date.now());
+const testDir = path.join(os.tmpdir(), `pi-tasks-race-test-${Date.now()}`);
 
 describe("Tasks Race Condition Bug", () => {
 	beforeEach(() => {
