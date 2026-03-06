@@ -2,10 +2,18 @@
  * pi-channels — Adapter registry + route resolution.
  */
 
-import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelConfig, AdapterDirection, OnIncomingMessage, IncomingMessage } from "./types.ts";
+import { createSlackAdapter } from "./adapters/slack.ts";
 import { createTelegramAdapter } from "./adapters/telegram.ts";
 import { createWebhookAdapter } from "./adapters/webhook.ts";
-import { createSlackAdapter } from "./adapters/slack.ts";
+import type {
+	AdapterConfig,
+	AdapterDirection,
+	ChannelAdapter,
+	ChannelConfig,
+	ChannelMessage,
+	IncomingMessage,
+	OnIncomingMessage,
+} from "./types.ts";
 
 // ── Built-in adapter factories ──────────────────────────────────
 
@@ -161,7 +169,8 @@ export class ChannelRegistry {
 
 	/** List all registered adapters and route aliases. */
 	list(): Array<{ name: string; type: "adapter" | "route"; direction?: AdapterDirection; target?: string }> {
-		const result: Array<{ name: string; type: "adapter" | "route"; direction?: AdapterDirection; target?: string }> = [];
+		const result: Array<{ name: string; type: "adapter" | "route"; direction?: AdapterDirection; target?: string }> =
+			[];
 		for (const [name, adapter] of this.adapters) {
 			result.push({ name, type: "adapter", direction: adapter.direction });
 		}

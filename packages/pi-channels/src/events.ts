@@ -15,9 +15,9 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ChatBridge } from "./bridge/bridge.ts";
 import type { ChannelRegistry } from "./registry.ts";
 import type { ChannelAdapter, ChannelMessage, IncomingMessage } from "./types.ts";
-import type { ChatBridge } from "./bridge/bridge.ts";
 
 /** Reference to the active bridge, set by index.ts after construction. */
 let activeBridge: ChatBridge | null = null;
@@ -27,7 +27,6 @@ export function setBridge(bridge: ChatBridge | null): void {
 }
 
 export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistry): void {
-
 	// ── Incoming messages → channel:receive (+ bridge) ──────
 
 	registry.setOnIncoming((message: IncomingMessage) => {
@@ -53,9 +52,7 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 		if (!event.job.channel) return;
 		if (!event.response && !event.error) return;
 
-		const text = event.ok
-			? event.response ?? "(no output)"
-			: `❌ Error: ${event.error ?? "unknown"}`;
+		const text = event.ok ? (event.response ?? "(no output)") : `❌ Error: ${event.error ?? "unknown"}`;
 
 		registry.send({
 			adapter: event.job.channel,
@@ -70,7 +67,7 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 
 	pi.events.on("channel:send", (raw: unknown) => {
 		const data = raw as ChannelMessage & { callback?: (result: { ok: boolean; error?: string }) => void };
-		registry.send(data).then(r => data.callback?.(r));
+		registry.send(data).then((r) => data.callback?.(r));
 	});
 
 	// ── channel:register — add a custom adapter ──────────────
@@ -102,12 +99,18 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 	// ── channel:test — send a test ping ──────────────────────
 
 	pi.events.on("channel:test", (raw: unknown) => {
-		const data = raw as { adapter: string; recipient: string; callback?: (result: { ok: boolean; error?: string }) => void };
-		registry.send({
-			adapter: data.adapter,
-			recipient: data.recipient ?? "",
-			text: `🏓 pi-channels test — ${new Date().toISOString()}`,
-			source: "channel:test",
-		}).then(r => data.callback?.(r));
+		const data = raw as {
+			adapter: string;
+			recipient: string;
+			callback?: (result: { ok: boolean; error?: string }) => void;
+		};
+		registry
+			.send({
+				adapter: data.adapter,
+				recipient: data.recipient ?? "",
+				text: `🏓 pi-channels test — ${new Date().toISOString()}`,
+				source: "channel:test",
+			})
+			.then((r) => data.callback?.(r));
 	});
 }

@@ -2,9 +2,9 @@
  * pi-channels — LLM tool registration.
  */
 
+import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
 import type { ChannelRegistry } from "./registry.ts";
 
 interface ChannelToolParams {
@@ -23,22 +23,15 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 			"Send notifications via configured adapters (Telegram, webhooks, custom). " +
 			"Actions: send (deliver a message), list (show adapters + routes), test (send a ping).",
 		parameters: Type.Object({
-			action: StringEnum(
-				["send", "list", "test"] as const,
-				{ description: "Action to perform" },
-			) as any,
-			adapter: Type.Optional(
-				Type.String({ description: "Adapter name or route alias (required for send, test)" }),
-			),
+			action: StringEnum(["send", "list", "test"] as const, { description: "Action to perform" }) as any,
+			adapter: Type.Optional(Type.String({ description: "Adapter name or route alias (required for send, test)" })),
 			recipient: Type.Optional(
-				Type.String({ description: "Recipient — chat ID, webhook URL, etc. (required for send unless using a route)" }),
+				Type.String({
+					description: "Recipient — chat ID, webhook URL, etc. (required for send unless using a route)",
+				}),
 			),
-			text: Type.Optional(
-				Type.String({ description: "Message text (required for send)" }),
-			),
-			source: Type.Optional(
-				Type.String({ description: "Source label (optional)" }),
-			),
+			text: Type.Optional(Type.String({ description: "Message text (required for send)" })),
+			source: Type.Optional(Type.String({ description: "Source label (optional)" })),
 		}) as any,
 
 		async execute(_toolCallId, _params) {
@@ -51,10 +44,10 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 					if (items.length === 0) {
 						result = 'No adapters configured. Add "pi-channels" to your settings.json.';
 					} else {
-						const lines = items.map(i =>
+						const lines = items.map((i) =>
 							i.type === "route"
 								? `- **${i.name}** (route → ${i.target})`
-								: `- **${i.name}** (${i.direction ?? "adapter"})`
+								: `- **${i.name}** (${i.direction ?? "adapter"})`,
 						);
 						result = `**Channel (${items.length}):**\n${lines.join("\n")}`;
 					}

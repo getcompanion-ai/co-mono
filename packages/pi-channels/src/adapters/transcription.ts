@@ -11,9 +11,9 @@
  *   const result = await provider.transcribe("/path/to/audio.ogg", "en");
  */
 
+import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFile } from "node:child_process";
 import type { TranscriptionConfig } from "../types.ts";
 
 // ── Public interface ────────────────────────────────────────────
@@ -187,7 +187,7 @@ class OpenAIProvider implements TranscriptionProvider {
 				return { ok: false, error: `OpenAI API error (${response.status}): ${body.slice(0, 200)}` };
 			}
 
-			const data = await response.json() as { text?: string };
+			const data = (await response.json()) as { text?: string };
 			if (!data.text) {
 				return { ok: false, error: "OpenAI returned empty transcription" };
 			}
@@ -238,7 +238,7 @@ class ElevenLabsProvider implements TranscriptionProvider {
 				return { ok: false, error: `ElevenLabs API error (${response.status}): ${body.slice(0, 200)}` };
 			}
 
-			const data = await response.json() as { text?: string };
+			const data = (await response.json()) as { text?: string };
 			if (!data.text) {
 				return { ok: false, error: "ElevenLabs returned empty transcription" };
 			}

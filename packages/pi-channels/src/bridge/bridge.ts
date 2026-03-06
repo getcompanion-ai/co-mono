@@ -7,18 +7,12 @@
  * senders run concurrently up to maxConcurrent.
  */
 
-import type {
-	IncomingMessage,
-	IncomingAttachment,
-	QueuedPrompt,
-	SenderSession,
-	BridgeConfig,
-} from "../types.ts";
-import type { ChannelRegistry } from "../registry.ts";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
-import { runPrompt } from "./runner.ts";
+import type { ChannelRegistry } from "../registry.ts";
+import type { BridgeConfig, IncomingAttachment, IncomingMessage, QueuedPrompt, SenderSession } from "../types.ts";
+import { type CommandContext, handleCommand, isCommand } from "./commands.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
-import { isCommand, handleCommand, type CommandContext } from "./commands.ts";
+import { runPrompt } from "./runner.ts";
 import { startTyping } from "./typing.ts";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
@@ -144,7 +138,7 @@ export class ChatBridge {
 				message.adapter,
 				message.sender,
 				`⚠️ Queue full (${this.config.maxQueuePerSender} pending). ` +
-				`Wait for current prompts to finish or use /abort.`,
+					`Wait for current prompts to finish or use /abort.`,
 			);
 			return;
 		}
@@ -163,7 +157,9 @@ export class ChatBridge {
 		session.messageCount++;
 
 		this.events.emit("bridge:enqueue", {
-			id: queued.id, adapter: message.adapter, sender: message.sender,
+			id: queued.id,
+			adapter: message.adapter,
+			sender: message.sender,
 			queueDepth: session.queue.length,
 		});
 
@@ -183,9 +179,7 @@ export class ChatBridge {
 
 		// Typing indicator
 		const adapter = this.registry.getAdapter(prompt.adapter);
-		const typing = this.config.typingIndicators
-			? startTyping(adapter, prompt.sender)
-			: { stop() {} };
+		const typing = this.config.typingIndicators ? startTyping(adapter, prompt.sender) : { stop() {} };
 
 		const ac = new AbortController();
 		session.abortController = ac;
@@ -193,7 +187,9 @@ export class ChatBridge {
 		const usePersistent = this.shouldUsePersistent(senderKey);
 
 		this.events.emit("bridge:start", {
-			id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
+			id: prompt.id,
+			adapter: prompt.adapter,
+			sender: prompt.sender,
 			text: prompt.text.slice(0, 100),
 			persistent: usePersistent,
 		});
@@ -225,22 +221,28 @@ export class ChatBridge {
 				this.sendReply(prompt.adapter, prompt.sender, "⏹ Aborted.");
 			} else {
 				const userError = sanitizeError(result.error);
-				this.sendReply(
-					prompt.adapter, prompt.sender,
-					result.response || `❌ ${userError}`,
-				);
+				this.sendReply(prompt.adapter, prompt.sender, result.response || `❌ ${userError}`);
 			}
 
 			this.events.emit("bridge:complete", {
-				id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
-				ok: result.ok, durationMs: result.durationMs,
+				id: prompt.id,
+				adapter: prompt.adapter,
+				sender: prompt.sender,
+				ok: result.ok,
+				durationMs: result.durationMs,
 				persistent: usePersistent,
 			});
-			this.log("bridge-complete", {
-				id: prompt.id, adapter: prompt.adapter, ok: result.ok,
-				durationMs: result.durationMs, persistent: usePersistent,
-			}, result.ok ? "INFO" : "WARN");
-
+			this.log(
+				"bridge-complete",
+				{
+					id: prompt.id,
+					adapter: prompt.adapter,
+					ok: result.ok,
+					durationMs: result.durationMs,
+					persistent: usePersistent,
+				},
+				result.ok ? "INFO" : "WARN",
+			);
 		} catch (err: any) {
 			typing.stop();
 			this.log("bridge-error", { adapter: prompt.adapter, sender: prompt.sender, error: err.message }, "ERROR");
@@ -296,9 +298,7 @@ export class ChatBridge {
 			adapter: message.adapter,
 			sender: message.sender,
 			displayName:
-				(message.metadata?.firstName as string) ||
-				(message.metadata?.username as string) ||
-				message.sender,
+				(message.metadata?.firstName as string) || (message.metadata?.username as string) || message.sender,
 			queue: [],
 			processing: false,
 			abortController: null,
@@ -413,21 +413,20 @@ function sanitizeError(error: string | undefined): string {
 	if (!error) return "Something went wrong. Please try again.";
 
 	// Extract the most meaningful line — skip "Extension error" noise and stack traces
-	const lines = error.split("\n").filter(l => l.trim());
+	const lines = error.split("\n").filter((l) => l.trim());
 
 	// Find the first line that isn't an extension loading error or stack frame
-	const meaningful = lines.find(l =>
-		!l.startsWith("Extension error") &&
-		!l.startsWith("    at ") &&
-		!l.startsWith("node:") &&
-		!l.includes("NODE_MODULE_VERSION") &&
-		!l.includes("compiled against a different") &&
-		!l.includes("Emitted 'error' event")
+	const meaningful = lines.find(
+		(l) =>
+			!l.startsWith("Extension error") &&
+			!l.startsWith("    at ") &&
+			!l.startsWith("node:") &&
+			!l.includes("NODE_MODULE_VERSION") &&
+			!l.includes("compiled against a different") &&
+			!l.includes("Emitted 'error' event"),
 	);
 
 	const msg = meaningful?.trim() || "Something went wrong. Please try again.";
 
-	return msg.length > MAX_ERROR_LENGTH
-		? msg.slice(0, MAX_ERROR_LENGTH) + "…"
-		: msg;
+	return msg.length > MAX_ERROR_LENGTH ? msg.slice(0, MAX_ERROR_LENGTH) + "…" : msg;
 }

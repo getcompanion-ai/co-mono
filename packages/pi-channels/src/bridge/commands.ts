@@ -51,11 +51,7 @@ export function getAllCommands(): BotCommand[] {
  * Handle a command. Returns reply text, or null if unrecognized
  * (fall through to agent).
  */
-export function handleCommand(
-	text: string,
-	session: SenderSession | undefined,
-	ctx: CommandContext,
-): string | null {
+export function handleCommand(text: string, session: SenderSession | undefined, ctx: CommandContext): string | null {
 	const { command } = parseCommand(text);
 	if (!command) return null;
 	const cmd = commands.get(command);
@@ -89,9 +85,7 @@ registerCommand({
 	handler: (_args, session, ctx) => {
 		if (!session) return "No active session.";
 		if (!session.processing) return "Nothing is running right now.";
-		return ctx.abortCurrent(session.sender)
-			? "⏹ Aborting current prompt..."
-			: "Failed to abort — nothing running.";
+		return ctx.abortCurrent(session.sender) ? "⏹ Aborting current prompt..." : "Failed to abort — nothing running.";
 	},
 });
 

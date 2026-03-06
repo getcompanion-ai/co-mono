@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -636,7 +636,6 @@ export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
 	private settingsManager: SettingsManager;
-	private globalNpmRoot: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
 
 	constructor(options: PackageManagerOptions) {
@@ -1157,20 +1156,12 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
-		if (scope === "user" && !temporary) {
-			await this.runCommand("npm", ["install", "-g", source.spec]);
-			return;
-		}
 		const installRoot = this.getNpmInstallRoot(scope, temporary);
 		this.ensureNpmProject(installRoot);
 		await this.runCommand("npm", ["install", source.spec, "--prefix", installRoot]);
 	}
 
 	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
-		if (scope === "user") {
-			await this.runCommand("npm", ["uninstall", "-g", source.name]);
-			return;
-		}
 		const installRoot = this.getNpmInstallRoot(scope, false);
 		if (!existsSync(installRoot)) {
 			return;
@@ -1297,16 +1288,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (scope === "project") {
 			return join(this.cwd, CONFIG_DIR_NAME, "npm");
 		}
-		return join(this.getGlobalNpmRoot(), "..");
-	}
-
-	private getGlobalNpmRoot(): string {
-		if (this.globalNpmRoot) {
-			return this.globalNpmRoot;
-		}
-		const result = this.runCommandSync("npm", ["root", "-g"]);
-		this.globalNpmRoot = result.trim();
-		return this.globalNpmRoot;
+		return join(this.agentDir, "npm");
 	}
 
 	private getNpmInstallPath(source: NpmSource, scope: SourceScope): string {
@@ -1316,7 +1298,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (scope === "project") {
 			return join(this.cwd, CONFIG_DIR_NAME, "npm", "node_modules", source.name);
 		}
-		return join(this.getGlobalNpmRoot(), source.name);
+		return join(this.agentDir, "npm", "node_modules", source.name);
 	}
 
 	private getGitInstallPath(source: GitSource, scope: SourceScope): string {
@@ -1776,17 +1758,5 @@ export class DefaultPackageManager implements PackageManager {
 				}
 			});
 		});
-	}
-
-	private runCommandSync(command: string, args: string[]): string {
-		const result = spawnSync(command, args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			encoding: "utf-8",
-			shell: process.platform === "win32",
-		});
-		if (result.status !== 0) {
-			throw new Error(`Failed to run ${command} ${args.join(" ")}: ${result.stderr || result.stdout}`);
-		}
-		return (result.stdout || result.stderr || "").trim();
 	}
 }

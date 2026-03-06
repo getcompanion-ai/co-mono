@@ -12,9 +12,9 @@
  *   4. Subprocess crash triggers auto-restart on next message
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import type { RunResult, IncomingAttachment } from "../types.ts";
+import type { IncomingAttachment, RunResult } from "../types.ts";
 
 export interface RpcRunnerOptions {
 	cwd: string;
@@ -176,8 +176,7 @@ export class RpcSession {
 					return;
 				}
 				options.signal.addEventListener("abort", onAbort, { once: true });
-				this.pending.abortHandler = () =>
-					options.signal?.removeEventListener("abort", onAbort);
+				this.pending.abortHandler = () => options.signal?.removeEventListener("abort", onAbort);
 			}
 
 			// Build prompt command

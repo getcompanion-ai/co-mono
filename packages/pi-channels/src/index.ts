@@ -35,12 +35,12 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { loadConfig } from "./config.ts";
-import { ChannelRegistry } from "./registry.ts";
-import { registerChannelEvents, setBridge } from "./events.ts";
-import { registerChannelTool } from "./tool.ts";
 import { ChatBridge } from "./bridge/bridge.ts";
+import { loadConfig } from "./config.ts";
+import { registerChannelEvents, setBridge } from "./events.ts";
 import { createLogger } from "./logger.ts";
+import { ChannelRegistry } from "./registry.ts";
+import { registerChannelTool } from "./tool.ts";
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -76,7 +76,7 @@ export default function (pi: ExtensionAPI) {
 		// Start incoming/bidirectional adapters
 		await registry.startListening();
 
-		const startErrors = registry.getErrors().filter(e => e.error.startsWith("Failed to start"));
+		const startErrors = registry.getErrors().filter((e) => e.error.startsWith("Failed to start"));
 		for (const err of startErrors) {
 			ctx.ui.notify(`pi-channels: ${err.adapter}: ${err.error}`, "warning");
 		}
@@ -105,9 +105,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("chat-bridge", {
 		description: "Manage chat bridge: /chat-bridge [on|off|status]",
 		getArgumentCompletions: (prefix: string) => {
-			return ["on", "off", "status"]
-				.filter(c => c.startsWith(prefix))
-				.map(c => ({ value: c, label: c }));
+			return ["on", "off", "status"].filter((c) => c.startsWith(prefix)).map((c) => ({ value: c, label: c }));
 		},
 		handler: async (args, ctx) => {
 			const cmd = args?.trim().toLowerCase();

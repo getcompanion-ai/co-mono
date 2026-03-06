@@ -32,7 +32,7 @@ fi
 if [[ "${CO_MONO_SKIP_BUILD:-0}" != "1" ]]; then
   log "Building core packages"
   BUILD_FAILED=0
-  for pkg in packages/agent packages/ai packages/tui packages/coding-agent; do
+  for pkg in packages/tui packages/ai packages/agent packages/coding-agent; do
     if ! npm run build --workspace "$pkg"; then
       BUILD_FAILED=1
       echo "WARN: build failed for $pkg; falling back to source launch mode."
@@ -43,7 +43,7 @@ else
 fi
 
 if [[ "$BUILD_FAILED" == "1" ]] && [[ ! -f "$ROOT_DIR/packages/coding-agent/src/cli.ts" ]]; then
-  fail "No usable coding-agent CLI source found for source launch fallback."
+	fail "No usable coding-agent CLI source found for source launch fallback."
 fi
 
 LAUNCHER="$ROOT_DIR/co-mono"
