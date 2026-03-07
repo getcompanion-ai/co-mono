@@ -5,6 +5,7 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AgentSession, AgentSessionEvent } from "./agent-session.js";
 import { SessionManager } from "./session-manager.js";
+import type { Settings } from "./settings-manager.js";
 import {
 	createVercelStreamListener,
 	errorVercelStream,
@@ -939,7 +940,7 @@ export class GatewayRuntime {
 
 	private async handlePatchConfig(patch: Record<string, unknown>): Promise<void> {
 		// Apply overrides on top of current settings (in-memory only for daemon use)
-		this.primarySession.settingsManager.applyOverrides(patch as import("./settings-manager.js").Settings);
+		this.primarySession.settingsManager.applyOverrides(patch as Settings);
 	}
 
 	private handleGetChannelsStatus(): ChannelStatus[] {
