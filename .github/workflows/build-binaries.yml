@@ -77,21 +77,3 @@ jobs:
             pi-linux-arm64.tar.gz \
             pi-windows-x64.zip \
             --clobber
-
-      - name: Trigger companion-cloud companion-os refresh
-        if: (github.event_name == 'workflow_dispatch') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-        env:
-          GH_TOKEN: ${{ secrets.COMPANION_CLOUD_DISPATCH_TOKEN }}
-        run: |
-          if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "GitHub dispatch token not set; skipping companion-cloud trigger."
-            exit 0
-          fi
-
-          echo "Triggering companion-cloud companion-os release for ${RELEASE_TAG}"
-          gh api \
-            repos/getcompanion-ai/companion-cloud/dispatches \
-            -X POST \
-            -f event_type=pi-mono-release \
-            -f client_payload[pi_tag]="${RELEASE_TAG}" \
-            -f client_payload[source_repo]="${{ github.repository }}"
