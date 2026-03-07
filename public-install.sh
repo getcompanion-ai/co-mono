@@ -39,6 +39,23 @@ fail() {
   exit 1
 }
 
+resolve_agent_dir() {
+  local raw_dir="$1"
+  local fallback_dir="$2"
+
+  for candidate in "${raw_dir}" "${fallback_dir}"; do
+    candidate="${candidate/#\~/$HOME}"
+    [[ "$candidate" != /* ]] && candidate="$PWD/$candidate"
+    mkdir -p "$candidate" 2>/dev/null || continue
+    if : > "${candidate}/.pi-agent-dir-write-check" 2>/dev/null; then
+      rm -f "${candidate}/.pi-agent-dir-write-check" 2>/dev/null || true
+      echo "$candidate"; return
+    fi
+    log "Warning: AGENT_DIR is not writable: ${candidate}"
+  done
+  fail "Could not create writable AGENT_DIR. Checked ${raw_dir} and ${fallback_dir}."
+}
+
 has() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -157,6 +174,8 @@ done
 if [[ "$FALLBACK_TO_SOURCE" != "0" && "$FALLBACK_TO_SOURCE" != "1" ]]; then
   fail "PI_FALLBACK_TO_SOURCE must be 0 or 1"
 fi
+
+AGENT_DIR="$(resolve_agent_dir "$AGENT_DIR" "$INSTALL_DIR/agent")"
 
 if [[ -d "$INSTALL_DIR" && "$SKIP_REINSTALL" != "1" ]]; then
   rm -rf "$INSTALL_DIR"
@@ -332,9 +351,21 @@ install_packages() {
     return
   fi
 
+  local npm_prefix
+  local -a npm_env
+
+  npm_prefix="${HOME}/.pi/npm-global"
+  npm_env=(
+    "NPM_CONFIG_PREFIX=$npm_prefix"
+    "npm_config_prefix=$npm_prefix"
+    "NODE_PATH=$npm_prefix/lib/node_modules:${NODE_PATH:-}"
+    "PATH=$npm_prefix/bin:$PATH"
+  )
+  mkdir -p "$npm_prefix/bin" "$npm_prefix/lib/node_modules"
+
   while IFS= read -r package; do
     [[ -z "$package" ]] && continue
-    if "$BIN_DIR/pi" install "$package" >/dev/null 2>&1; then
+    if "${npm_env[@]}" "$BIN_DIR/pi" install "$package" >/dev/null 2>&1; then
       log "Installed package: $package"
     else
       log "Could not install ${package} now. It will install on first run when available."
